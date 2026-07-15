@@ -1,7 +1,14 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "health-advisor"
 version = "0.2.0"
 description = "Local-first data-driven fat-loss advisor for body composition, sleep, Strava, and food logs"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 maintainers = [{name = "shkyyy18"}]
 requires-python = ">=3.11"
 dependencies = [
@@ -27,3 +34,10 @@ Issues = "https://github.com/shkyyy18/health-advisor/issues"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["data*", "docs*", "logs*", "scripts*", "tests*"]
+
+[tool.setuptools.package-data]
+app = ["templates/*.html"]

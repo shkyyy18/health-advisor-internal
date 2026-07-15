@@ -14,7 +14,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+dist/
+build/
+*.egg-info/
 venv/
+dist/
+build/
+*.egg-info/
 
 # Editors and OS
 .vscode/
