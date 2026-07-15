@@ -6,6 +6,14 @@
 
 > 这不是“小米数据采集工具”的另一个外壳。小米健康数据只是输入之一；项目的核心价值是帮助用户发现体重/体脂停滞的原因，并把下一周该怎么吃、怎么练、怎么恢复说清楚。
 
+## 合成数据演示
+
+![Health Advisor synthetic dashboard](docs/assets/dashboard-synthetic.png)
+
+<p align="center"><img src="docs/assets/mobile-food-log-synthetic.png" width="360" alt="Health Advisor synthetic mobile food log"></p>
+
+> 两张截图全部使用合成数据，不包含真实体重、体脂、饮食、token 或数据库内容。
+
 ## 目标用户
 
 最适合以下用户：
