@@ -230,11 +230,40 @@ def _nutrition_plan(
     hard_carb_low = round(weight * 4.0) if weight else None
     hard_carb_high = round(weight * 6.0) if weight else None
 
-    logged_dates = {str(item.get("eaten_at", ""))[:10] for item in nutrition if item.get("eaten_at")}
-    data_note = (
-        f"近期开餐记录覆盖{len(logged_dates)}天，只能制定目标，暂不能判断你实际是否吃够。"
-        if logged_dates else "尚无连续饮食记录，只能制定目标，不能评价实际摄入。"
-    )
+    today = datetime.now().astimezone().date()
+    window_start = today - timedelta(days=6)
+    recent_nutrition: list[dict[str, Any]] = []
+    logged_dates: set[str] = set()
+    for item in nutrition:
+        raw_eaten_at = str(item.get("eaten_at", ""))
+        try:
+            logged_date = datetime.fromisoformat(raw_eaten_at[:10]).date()
+        except ValueError:
+            continue
+        if window_start <= logged_date <= today:
+            recent_nutrition.append(item)
+            logged_dates.add(logged_date.isoformat())
+    logged_days = len(logged_dates)
+    record_count = len(recent_nutrition)
+    coverage_pct = round(logged_days / 7 * 100)
+    if logged_days >= 5:
+        logging_confidence = "高"
+        data_note = (
+            f"近7天饮食记录覆盖{logged_days}天，共{record_count}条；"
+            "已可用于观察摄入模式，但热量估算仍有误差。"
+        )
+    elif logged_days >= 2:
+        logging_confidence = "中"
+        data_note = (
+            f"近7天饮食记录覆盖{logged_days}天，共{record_count}条；"
+            "可初步看出漏记和餐次模式，尚不足以评价实际摄入。"
+        )
+    else:
+        logging_confidence = "低"
+        data_note = (
+            "近7天尚无连续饮食记录，只能制定目标，"
+            "不能评价实际摄入。"
+        )
     today_easy = workout.get("intensity") in {"恢复", "低强度耐力"}
     protein_target = f"{protein_low}–{protein_high}克/天" if protein_low else "需体重数据"
     protein_plain = (
@@ -290,6 +319,10 @@ def _nutrition_plan(
         "daily_menu": daily_menu,
         "during_ride": ["60分钟以内轻松骑：通常喝水即可。", "60–150分钟：每小时补30–60克碳水化合物，例如每小时香蕉1根（约25克）+运动饮料500毫升（约25–30克），或能量胶1包（常见约20–25克）+香蕉1根。", "超过150分钟或比赛模拟：先从每小时60克开始练肠胃耐受，不要第一次就直接吃到90克。", "饮水先以每小时500–750毫升为起点；炎热、大汗时补电解质（钠、钾等帮助维持体液平衡的矿物质），再按口渴和骑前后体重变化调整。"],
         "food_pattern": "川味可以保留辣椒、花椒、醋和香料；真正需要量化的是油和高脂配料。点外卖时优先选清蒸鱼、番茄牛肉、青椒肉丝少油版、麻辣烫清汤少油；回锅肉、水煮肉片、干锅和红油菜可少点，并把浮油留在碗里。",
+        "logged_days": logged_days,
+        "record_count": record_count,
+        "coverage_pct": coverage_pct,
+        "logging_confidence": logging_confidence,
         "data_note": data_note,
     }
 
@@ -456,12 +489,12 @@ def build_summary(
     else:
         gaps.append(f"最高记录心率{observed_max_hr:.0f}仅为历史观测值，不视为实验室测得最大心率。")
     gaps.append("缺少FTP（功能性阈值功率）/阈值功率测试，因此课表使用RPE（主观用力程度）和说话测试，不伪造功率区间。")
-    if len({str(item.get('eaten_at', ''))[:10] for item in nutrition}) < 3:
-        gaps.append("饮食日志不足3天，无法评价真实能量和营养摄入。")
+    if nutrition_plan["logged_days"] < 3:
+        gaps.append("近7天饮食日志不足3天，无法评价真实能量和营养摄入。")
 
     return {
         "period": "最近7天",
-        "method_version": "可解释自适应骑行教练 v1",
+        "method_version": "本地数据驱动减脂顾问 v1",
         "training": {
             "activity_count": len(recent),
             "minutes": total_minutes,

@@ -23,6 +23,7 @@ from app.meal_analysis import (
 from app.config import PROJECT_ROOT, settings
 from app.db import (
     connect, init_db, list_activities, load_health_snapshot, save_photo_nutrition,
+    save_quick_nutrition,
 )
 from app.xiaomi_sync import XiaomiSyncError, sync_mi_fitness
 from app.strava import (
@@ -40,7 +41,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="健康助手", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="数据驱动减脂健康顾问", version="0.2.0", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,18 @@ class SleepSession(BaseModel):
     average_hr: float | None = Field(default=None, ge=20, le=250)
     average_spo2: float | None = Field(default=None, ge=50, le=100)
     source: str = "xiaomi_band_10_nfc_manual"
+
+
+class QuickMeal(BaseModel):
+    eaten_at: datetime | None = None
+    meal_type: str = Field(default="unknown", min_length=1, max_length=20)
+    description: str = Field(min_length=1, max_length=500)
+    estimated_kcal: float | None = Field(default=None, ge=0, le=10000)
+    protein_g: float | None = Field(default=None, ge=0, le=1000)
+    carb_g: float | None = Field(default=None, ge=0, le=2000)
+    fat_g: float | None = Field(default=None, ge=0, le=1000)
+    confidence: str = Field(default="manual", min_length=1, max_length=30)
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class StravaWebhookEvent(BaseModel):
@@ -171,6 +184,33 @@ def _range_midpoint(value: object) -> float | None:
     numbers = [float(item) for item in re.findall(r"\d+(?:\.\d+)?", str(value or ""))]
     if not numbers: return None
     return sum(numbers[:2]) / min(2, len(numbers))
+
+
+@app.post("/api/meals/quick")
+def save_quick_meal(item: QuickMeal):
+    eaten_at = (item.eaten_at or datetime.now().astimezone()).isoformat()
+    meal_type = item.meal_type.strip() or "unknown"
+    description = item.description.strip()
+    if not description:
+        raise HTTPException(status_code=422, detail="Meal description cannot be blank.")
+    save_quick_nutrition(
+        eaten_at,
+        meal_type,
+        description,
+        total_kcal=item.estimated_kcal,
+        protein_g=item.protein_g,
+        carb_g=item.carb_g,
+        fat_g=item.fat_g,
+        confidence=item.confidence.strip() or "manual",
+        notes=item.notes.strip() if item.notes else None,
+    )
+    return {
+        "status": "saved",
+        "source": "quick_manual",
+        "eaten_at": eaten_at,
+        "meal_type": meal_type,
+        "description": description,
+    }
 
 
 @app.post("/api/meals/analyze")

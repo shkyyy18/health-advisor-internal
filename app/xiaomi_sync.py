@@ -2,18 +2,16 @@
 
 import json
 import os
-import sys
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from app.config import PROJECT_ROOT, settings
+from app.config import settings
 from app.db import connect
 
 
-SOURCE = "legacy_mi_fitness_cloud"
-VENDORED_SRC = PROJECT_ROOT / "vendor" / "mi-fitness-mcp-cn" / "src"
+SOURCE = "mi_fitness_data_bridge"
 
 
 class XiaomiSyncError(RuntimeError):
@@ -23,15 +21,12 @@ class XiaomiSyncError(RuntimeError):
 def _adapter_class():
     try:
         from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
-    except ModuleNotFoundError:
-        if VENDORED_SRC.exists() and str(VENDORED_SRC) not in sys.path:
-            sys.path.insert(0, str(VENDORED_SRC))
-        try:
-            from mi_fitness_mcp.adapters.mi_fitness_cloud import MiFitnessCloudAdapter
-        except ModuleNotFoundError as exc:
-            raise XiaomiSyncError(
-                "小米同步依赖不存在。请确认 vendor/mi-fitness-mcp-cn 已部署。"
-            ) from exc
+    except ModuleNotFoundError as exc:
+        raise XiaomiSyncError(
+            "Mi Fitness Data Bridge is not installed. In this workspace run: "
+            "pip install -e ../mi_fitness_data_bridge. After release, install "
+            "mi-fitness-data-bridge from the package index."
+        ) from exc
     return MiFitnessCloudAdapter
 
 

@@ -1,62 +1,150 @@
-# Health Assistant
+# Health Advisor
 
-`health_assistant` is a local-first personal health data hub available at `http://127.0.0.1:8000/`.
+**Local-first data-driven fat-loss advisor.**
 
-## Capabilities
+把体脂、睡眠、Strava 运动和饮食数据转化为每周可执行的减脂调整。
 
-- Sync Strava activities and training history.
-- Sync Xiaomi Mi Fitness steps, sleep, body composition, heart rate, SpO2, and stress.
-- Calculate training load, recovery/readiness, weight/body-fat trends, and explainable suggestions.
-- Provide food logging, image-assisted nutrition estimates, and a local dashboard.
+> 这不是“小米数据采集工具”的另一个外壳。小米健康数据只是输入之一；项目的核心价值是帮助用户发现体重/体脂停滞的原因，并把下一周该怎么吃、怎么练、怎么恢复说清楚。
 
-## Architecture
+## 目标用户
 
-- **Connector layer:** Strava and Xiaomi Mi Fitness.
-- **Storage layer:** `data/health.db`; only one writer is allowed at a time.
-- **Analysis layer:** readiness, training load, trends, and recommendations.
-- **Presentation layer:** FastAPI and the local dashboard.
+最适合以下用户：
 
-Do not recreate compatibility copies for retired tool-specific directories.
+- 已经使用小米体脂秤、手环/手表，并在 Strava 留下运动记录；
+- 目标是减脂，但数据分散在多个应用里，无法形成统一判断；
+- 经常称重、运动，却不知道平台期来自饮食、恢复、活动量还是测量波动；
+- 接受本地部署，重视健康数据和登录凭据不上传到第三方服务。
 
-## Install and test
+当前不是医疗诊断工具、通用医院健康平台或多人 SaaS，也不承诺自动、无误差地识别所有饮食。
 
-```powershell
-cd D:\AIWorkspace\projects\health_assistant
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev,xiaomi]"
-python -m pytest -q -p no:cacheprovider
+## 真正要解决的问题
+
+减脂不是“再多采一个设备数据”就能完成。自动数据中，体重、睡眠和运动相对容易获得，**每天到底吃了什么、吃了多少**才是最大的缺口。
+
+因此项目同时提供两种记录路径：
+
+1. **30 秒手工记录：**食物描述必填，热量和营养素不知道就留空，不强迫用户编数字；
+2. **照片辅助记录：**配置 OpenAI API 后，估算餐食组成并保留不确定性说明。
+
+看板展示近 7 天饮食记录覆盖天数、条数和数据置信度。数据不足时只给目标，不假装能判断真实摄入。
+
+## 核心能力
+
+- 汇总小米体脂、睡眠、步数、心率、SpO2 和压力数据；
+- 同步 Strava 活动、训练量与近期强度；
+- 计算恢复状态、训练负荷、体重和体脂趋势；
+- 快速手工记录或照片辅助记录饮食；
+- 生成可解释的训练、饮食和恢复建议；
+- 所有个人数据默认保存在本地 SQLite，服务默认仅监听 `127.0.0.1`。
+
+## 与 Mi Fitness Data Bridge 的关系
+
+小米连接器已经拆分为独立项目：
+
+```text
+D:\AIWorkspace\projects\mi_fitness_data_bridge
 ```
 
-Copy `.env.example` to `.env`, fill local secrets, then run:
+- **Mi Fitness Data Bridge：**帮助用户拥有、导出和复用自己的小米健康数据；
+- **Health Advisor：**把小米、Strava 和饮食数据组合起来，帮助用户真正执行减脂计划。
+
+本项目不再复制或 vendor 小米连接器源码。桥接器是唯一连接器实现，健康顾问只把它作为数据源依赖。
+
+## 架构
+
+```text
+Mi Fitness Data Bridge ─┐
+                        ├─> 本地 SQLite ─> 可解释分析 ─> 每周行动建议
+Strava API ─────────────┤
+手工/照片饮食记录 ─────┘
+```
+
+- **Connector layer：**Mi Fitness Data Bridge、Strava；
+- **Storage layer：**`data/health.db`，同一时间只允许一个写入者；
+- **Analysis layer：**恢复、训练负荷、体重/体脂趋势、饮食覆盖度；
+- **Presentation layer：**FastAPI 本地看板和手机饮食记录页。
+
+## 安装
+
+推荐把两个仓库放在同一个父目录：
+
+```powershell
+cd D:\AIWorkspace\projects
+git clone https://github.com/shkyyy18/mi-fitness-data-bridge.git mi_fitness_data_bridge
+git clone https://github.com/shkyyy18/health-advisor.git health_assistant
+cd health_assistant
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ..\mi_fitness_data_bridge
+pip install -e ".[dev,xiaomi]"
+```
+
+复制 `.env.example` 为 `.env`，填写本地配置，然后运行：
 
 ```powershell
 .\run.ps1
 ```
 
-## First Xiaomi login
+本地看板：`http://127.0.0.1:8000/`
 
-The dashboard refresh button now calls the Mi Fitness cloud connector directly; it no longer imports an old JSON directory. Create a local authentication file once:
+## 首次连接小米
+
+桥接器提供健康数据读取接口；当前二维码登录辅助脚本仍由本项目的 `mijiaAPI` 可选依赖提供：
 
 ```powershell
-cd D:\AIWorkspace\projects\health_assistant
 python scripts\mijia_health_sync.py login
-```
-
-The script creates a QR image. Scan it with the Mi Home app. Credentials are stored in the Git-ignored file `data\.mijia\auth.json`.
-
-```powershell
 python scripts\mijia_health_sync.py doctor
 python scripts\mijia_health_sync.py sync
 ```
 
-The authentication file contains sensitive login tokens. Never upload, print, or share it.
+登录文件位于 `data\.mijia\auth.json`，包含敏感 token，不得上传、打印或分享。
 
-## Runtime data
+## 饮食记录
 
-- Database: `data\health.db`
-- Xiaomi auth: `data\.mijia\auth.json`
-- Logs: `logs\`
-- Local config: `.env`
+打开 `http://127.0.0.1:8000/mobile`：
 
-These files are excluded from Git. See `THIRD_PARTY_NOTICES.md` for third-party licenses.
+- 不配置 OpenAI API 也可以手工记录；
+- 配置 `OPENAI_API_KEY` 后可以上传餐食照片辅助估算；
+- 原始照片不会写入本地数据库，只保存文字分析和营养估算；
+- 手工和照片估算都不是实验室测量，建议优先记录“吃了什么和份量”，再逐步提高数字精度。
+
+## 测试
+
+```powershell
+python -m pytest -q -p no:cacheprovider
+python -m py_compile app\analytics.py app\db.py app\main.py app\xiaomi_sync.py
+```
+
+测试会把数据库切换到临时目录，不会读写真实的 `data/health.db`。
+
+## 隐私与安全
+
+以下内容均被 Git 忽略，禁止提交：
+
+- `.env`、访问 token、登录文件；
+- SQLite 数据库、导出数据；
+- 健康日志、餐食照片、运行日志；
+- 包含真实个人指标的截图和测试夹具。
+
+详见 `SECURITY.md`。
+
+## 项目边界
+
+- 内容用于个人运动和体重管理，不替代医生、注册营养师或持证教练的个体化评估；
+- 不生成诊断或治疗建议；
+- 不把历史观测最高心率冒充实验室最大心率；
+- 数据不足时必须明确降低结论置信度。
+
+## GitHub 双项目实验
+
+桥接器和完整健康顾问都可以独立发布，由真实用户选择价值：
+
+- Star 衡量传播；
+- 安装、成功同步、Issue 和 PR 衡量生态价值；
+- 7 天饮食记录、周报生成、4 周留存和建议执行衡量问题是否真正被解决。
+
+详见 `docs/github-experiment.md`。
+
+## License
+
+MIT，见 `LICENSE`。第三方依赖和来源说明见 `THIRD_PARTY_NOTICES.md`。

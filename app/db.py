@@ -320,6 +320,47 @@ def save_photo_nutrition(eaten_at: str, meal_type: str, analysis: dict[str, Any]
         )
 
 
+def save_quick_nutrition(
+    eaten_at: str,
+    meal_type: str,
+    description: str,
+    *,
+    total_kcal: float | None = None,
+    protein_g: float | None = None,
+    carb_g: float | None = None,
+    fat_g: float | None = None,
+    confidence: str = "manual",
+    notes: str | None = None,
+) -> None:
+    metadata = {
+        "description": description,
+        "confidence": confidence,
+        "notes": notes,
+    }
+    with connect() as db:
+        db.execute(
+            """INSERT INTO nutrition_logs
+              (eaten_at, meal_type, total_kcal, protein_g, carb_g, fat_g, source, raw_json)
+              VALUES (?, ?, ?, ?, ?, ?, 'quick_manual', ?)
+              ON CONFLICT(eaten_at, source) DO UPDATE SET
+                meal_type=excluded.meal_type,
+                total_kcal=excluded.total_kcal,
+                protein_g=excluded.protein_g,
+                carb_g=excluded.carb_g,
+                fat_g=excluded.fat_g,
+                raw_json=excluded.raw_json""",
+            (
+                eaten_at,
+                meal_type,
+                total_kcal,
+                protein_g,
+                carb_g,
+                fat_g,
+                json.dumps(metadata, ensure_ascii=False),
+            ),
+        )
+
+
 def load_health_snapshot(activity_limit: int = 500, other_limit: int = 30) -> dict[str, Any]:
     """Read all dashboard inputs in one consistent transaction."""
     with connect() as db:
@@ -363,7 +404,7 @@ def load_health_snapshot(activity_limit: int = 500, other_limit: int = 30) -> di
             dict(row)
             for row in db.execute(
                 "SELECT * FROM nutrition_logs ORDER BY eaten_at DESC LIMIT ?",
-                (other_limit,),
+                (max(other_limit, 100),),
             ).fetchall()
         ]
         profile_row = db.execute("SELECT * FROM user_profile WHERE id=1").fetchone()

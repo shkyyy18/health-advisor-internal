@@ -1,7 +1,8 @@
 [project]
-name = "health-assistant"
-version = "0.1.0"
-description = "Personal health data hub for Strava and Xiaomi devices"
+name = "health-advisor"
+version = "0.2.0"
+description = "Local-first data-driven fat-loss advisor for body composition, sleep, Strava, and food logs"
+maintainers = [{name = "shkyyy18"}]
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
@@ -17,6 +18,11 @@ xiaomi = [
   "mijiaAPI>=4.1,<5",
   "qrcode[pil]>=8,<9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/shkyyy18/health-advisor"
+Repository = "https://github.com/shkyyy18/health-advisor"
+Issues = "https://github.com/shkyyy18/health-advisor/issues"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

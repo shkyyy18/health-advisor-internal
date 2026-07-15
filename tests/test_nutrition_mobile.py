@@ -1,9 +1,10 @@
 from __future__ import annotations
 import asyncio
-from datetime import datetime, timezone
+import json
+from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 from fastapi.testclient import TestClient
-from app import main
+from app import db, main
 from app.analytics import build_summary
 from app.meal_analysis import _json_from_text
 
@@ -94,3 +95,48 @@ def test_meal_upload_uses_lunch_when_meal_type_is_omitted(monkeypatch):
     )
     assert response.status_code == 200
     assert saved[0][1] == "午餐"
+
+
+def test_quick_manual_meal_endpoint_saves_without_openai():
+    eaten_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    response = TestClient(main.app).post(
+        "/api/meals/quick",
+        json={
+            "eaten_at": eaten_at,
+            "meal_type": "\u665a\u9910",
+            "description": "\u719f\u7c73\u996d150\u514b\uff0c\u9c7c\u867e160\u514b\uff0c\u852c\u83dc300\u514b",
+            "estimated_kcal": 680,
+            "protein_g": 42,
+            "confidence": "rough_estimate",
+            "notes": "\u5916\u5356\u5c11\u6cb9",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "quick_manual"
+    with db.connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM nutrition_logs WHERE source='quick_manual'"
+        ).fetchone()
+    assert row["meal_type"] == "\u665a\u9910"
+    assert row["total_kcal"] == 680
+    metadata = json.loads(row["raw_json"])
+    assert metadata["confidence"] == "rough_estimate"
+    assert "\u9c7c\u867e" in metadata["description"]
+
+
+def test_nutrition_summary_exposes_recent_logging_coverage():
+    now = datetime.now(timezone.utc)
+    nutrition = [
+        {"eaten_at": now.isoformat(), "source": "quick_manual"},
+        {"eaten_at": (now - timedelta(days=1)).isoformat(), "source": "photo_ai"},
+        {"eaten_at": (now - timedelta(days=1, hours=2)).isoformat(), "source": "quick_manual"},
+        {"eaten_at": (now - timedelta(days=10)).isoformat(), "source": "quick_manual"},
+    ]
+
+    result = build_summary([], [], [], nutrition=nutrition)["nutrition"]
+
+    assert result["logged_days"] == 2
+    assert result["record_count"] == 3
+    assert result["coverage_pct"] == 29
+    assert result["logging_confidence"] == "\u4e2d"

@@ -1,11 +1,19 @@
 # Third-party notices
 
-## mi-fitness-mcp-cn
+## Mi Fitness Data Bridge
 
-This project vendors a minimal source copy under `vendor/mi-fitness-mcp-cn` to provide the Xiaomi Mi Fitness cloud connector.
+Xiaomi Mi Fitness cloud access is provided by the separate `mi-fitness-data-bridge` dependency. Its Python compatibility namespace is `mi_fitness_mcp`.
 
-- Upstream: `https://github.com/binglua/mi-fitness-mcp-cn`
+- Local workspace: `D:\AIWorkspace\projects\mi_fitness_data_bridge`
 - License: MIT
-- Copyright: Aleksej Kubulashvili
+- Provenance and upstream attribution: see that project's `THIRD_PARTY_NOTICES.md` and `LICENSE`
 
-The full upstream MIT license is preserved at `vendor/mi-fitness-mcp-cn/LICENSE`.
+This repository does not vendor or copy the bridge source. The connector is unofficial, is not affiliated with Xiaomi, and may stop working when private upstream endpoints change.
+
+## mijiaAPI
+
+The optional first-login QR helper uses the separately installed `mijiaAPI` package. Review its own license and security documentation before distribution.
+
+## Strava
+
+Strava access uses the public OAuth/API integration configured by the user. Strava credentials and activity data remain local runtime state and are not included in this repository.
