@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a reproducible Health Advisor problem using synthetic or fully redacted details.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never upload `.env`, tokens, SQLite databases, meal photos, logs, or screenshots containing personal metrics.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.2.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Installation/startup
+        - Dashboard
+        - Mobile meal logging
+        - Photo meal analysis
+        - Mi Fitness synchronization
+        - Strava synchronization/webhook
+        - Body composition analysis
+        - Sleep/recovery analysis
+        - Training recommendation
+        - SQLite/storage
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, and browser if relevant.
+      placeholder: Windows 11, Python 3.12, Chrome 126
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic values and a temporary database.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: redacted_logs
+    attributes:
+      label: Redacted logs
+      description: Remove credentials, identifiers, local personal paths, and health records.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I used synthetic or fully redacted data and did not attach a real database, token, log, or meal photo.
+          required: true
+        - label: This is not a request for emergency or medical diagnosis/treatment advice.
+          required: true

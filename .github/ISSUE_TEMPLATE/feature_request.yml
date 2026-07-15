@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose an improvement to the local fat-loss data and action loop.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What prevents a user from turning body, sleep, activity, or food data into an action?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the workflow and the decision it should improve.
+    validations:
+      required: true
+  - type: textarea
+    id: uncertainty
+    attributes:
+      label: Data gaps and uncertainty
+      description: What could the system know, estimate, or not know?
+    validations:
+      required: true
+  - type: textarea
+    id: success
+    attributes:
+      label: Success measure
+      description: For example, logging time, seven-day coverage, weekly action completion, or four-week retention.
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Product boundary
+      options:
+        - label: The proposal does not duplicate the Mi Fitness bridge source in this repository.
+          required: true
+        - label: The proposal does not claim medical diagnosis, treatment, or guaranteed weight loss.
+          required: true

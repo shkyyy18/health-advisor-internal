@@ -153,6 +153,10 @@ python -m py_compile app\analytics.py app\db.py app\main.py app\xiaomi_sync.py
 
 详见 `docs/github-experiment.md`。
 
+## 发布
+
+版本变更见 `CHANGELOG.md`，GitHub 发布、服务切换和产品实验检查见 `docs/release-checklist.md`。
+
 ## License
 
 MIT，见 `LICENSE`。第三方依赖和来源说明见 `THIRD_PARTY_NOTICES.md`。

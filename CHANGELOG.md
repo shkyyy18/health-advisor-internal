@@ -1,0 +1,23 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.2.0] - 2026-07-15
+
+### Added
+
+- Fast manual meal logging through `POST /api/meals/quick` and the mobile page.
+- Optional calorie and macronutrient fields without forcing users to invent values.
+- Seven-day food logging coverage, record count, confidence, and data-gap messaging.
+- Product positioning, food capture design, and GitHub experiment documentation.
+- Synthetic desktop and mobile screenshots with no personal health data.
+- Security, contribution, and CI documentation.
+
+### Changed
+
+- Repositioned the product as a local-first, data-driven fat-loss advisor.
+- Moved Mi Fitness acquisition to the independent `mi-fitness-data-bridge` dependency.
+- Removed the vendored connector implementation.
+- Reduced recommendation confidence when food logging coverage is insufficient.
+
+[0.2.0]: https://github.com/shkyyy18/health-advisor/releases/tag/v0.2.0
