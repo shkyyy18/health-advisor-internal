@@ -16,6 +16,7 @@ def test_concrete_nutrition_plan_explains_food_weight():
     assert "鸡蛋" in nutrition["protein_explanation"]
     assert "约需18个" in nutrition["protein_explanation"]
     assert len(nutrition["daily_menu"]) == 4
+    assert all(item["why"] for item in nutrition["daily_menu"])
     assert any("蔬菜300克" in item["foods"] for item in nutrition["daily_menu"])
     assert "主要蛋白质食物合计约" in nutrition["today_food_goal"]
     assert "覆盖118–148克/天的下限" in nutrition["today_food_goal"]
@@ -141,3 +142,25 @@ def test_nutrition_summary_exposes_recent_logging_coverage():
     assert result["record_count"] == 3
     assert result["coverage_pct"] == 29
     assert result["logging_confidence"] == "\u4e2d"
+
+
+def test_mobile_dashboard_renders_daily_coach_and_rotating_menu():
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    summary = build_summary([], [], [], now=now)
+
+    html = main.templates.env.get_template("mobile.html").render(
+        summary=summary,
+        openai_ready=False,
+        vision_model="test-model",
+    )
+
+    assert "今日联动教练" in html
+    assert "运动：" in html
+    assert "饮食：" in html
+    assert "恢复：" in html
+    assert "测量：" in html
+    assert "今天怎么吃" in html
+    assert summary["nutrition"]["menu_variant"] in html
+    assert summary["nutrition"]["daily_menu"][0]["foods"] in html
+    assert 'aria-live="polite"' in html
+    assert "正在刷新今日计划" in html

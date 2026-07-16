@@ -111,6 +111,7 @@ python scripts\mijia_health_sync.py sync
 
 打开 `http://127.0.0.1:8000/mobile`：
 
+- 先查看今日联动教练、训练/恢复动作和随训练变化的一日菜单；
 - 不配置 OpenAI API 也可以手工记录；
 - 配置 `OPENAI_API_KEY` 后可以上传餐食照片辅助估算；
 - 原始照片不会写入本地数据库，只保存文字分析和营养估算；

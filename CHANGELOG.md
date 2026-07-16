@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Mobile daily coaching card linking training, nutrition, recovery, and measurement actions.
+- Mobile rotating meal plan with workout-aware carbohydrate portions and per-meal rationale.
+
+### Changed
+
+- Refresh the mobile plan after a quick meal log so seven-day coverage and confidence update immediately.
+
 ## [0.2.0] - 2026-07-15
 
 ### Added

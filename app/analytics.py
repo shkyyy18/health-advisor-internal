@@ -425,11 +425,16 @@ def _rotating_daily_menu(*, today: Any, protein_low: int | None, protein_target:
     snack=variant["snack"]+(variant["extra"] if carb_mode=="质量训练日" else "")
     lunch_energy={"恢复/休息日":"约550–700千卡","轻松训练日":"约650–800千卡","质量训练日":"约750–900千卡"}[carb_mode]
     dinner_energy={"恢复/休息日":"约500–650千卡","轻松训练日":"约600–750千卡","质量训练日":"约750–950千卡"}[carb_mode]
+    carb_reason={
+        "恢复/休息日":"降低主食份量但保留蛋白质和蔬菜，避免恢复日变成跳餐日。",
+        "轻松训练日":"用中等主食份量支持活动，同时维持温和热量缺口。",
+        "质量训练日":"把更多碳水放在训练前后，优先保障输出和恢复。",
+    }[carb_mode]
     daily_menu=[
-        {"meal":"早餐","foods":variant["breakfast"],"estimate":"约450–620千卡；蛋白质约25–40克"},
-        {"meal":"午餐","foods":f"{portions['lunch'][carb_mode]} + {variant['lunch']}{lunch_g}克 + 蔬菜300克（约2拳） + 烹调油10克","estimate":f"{lunch_energy}；主要蛋白质约{lunch_protein}克"},
-        {"meal":"加餐","foods":snack,"estimate":("约180–290千卡" if carb_mode!="质量训练日" else "约260–380千卡；训练前后使用")},
-        {"meal":"晚餐","foods":f"{portions['dinner'][carb_mode]} + {variant['dinner']} + 蔬菜300克（约2拳） + 烹调油10克","estimate":f"{dinner_energy}；主要蛋白质约{round(variant['dinner_main'])}克"},
+        {"meal":"早餐","foods":variant["breakfast"],"estimate":"约450–620千卡；蛋白质约25–40克","why":"早餐先补蛋白质和高纤维主食，降低上午饥饿。"},
+        {"meal":"午餐","foods":f"{portions['lunch'][carb_mode]} + {variant['lunch']}{lunch_g}克 + 蔬菜300克（约2拳） + 烹调油10克","estimate":f"{lunch_energy}；主要蛋白质约{lunch_protein}克","why":carb_reason},
+        {"meal":"加餐","foods":snack,"estimate":("约180–290千卡" if carb_mode!="质量训练日" else "约260–380千卡；训练前后使用"),"why":("用于两餐间控制饥饿，不因为休息而省掉蛋白质。" if carb_mode!="质量训练日" else "训练前后补充易执行的碳水和蛋白质。")},
+        {"meal":"晚餐","foods":f"{portions['dinner'][carb_mode]} + {variant['dinner']} + 蔬菜300克（约2拳） + 烹调油10克","estimate":f"{dinner_energy}；主要蛋白质约{round(variant['dinner_main'])}克","why":"补足全天蛋白质和蔬菜，主食份量继续跟随训练需求。"},
     ]
     protein_foods="、".join([variant["breakfast_protein"],f"{variant['lunch']}{lunch_g}克",variant["snack_protein"],variant["dinner"]])
     goal=(f"今日轮换为“{variant['name']}”：{protein_foods}。主要蛋白质食物合计约{main_protein}克蛋白质，覆盖{protein_target}的下限。" if protein_low else f"今日轮换为“{variant['name']}”。需要体重数据后才能校准具体蛋白质份量。")
