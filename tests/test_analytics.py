@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.analytics import _body_analysis, build_summary
 
@@ -134,3 +134,84 @@ def test_body_analysis_limits_recent_measurements_to_five_rows():
     assert len(analysis["recent_measurements"]) == 5
     assert analysis["recent_measurements"][0]["measured_at_label"] == "2026-07-07 08:00"
     assert analysis["recent_measurements"][-1]["measured_at_label"] == "2026-07-03 08:00"
+
+
+def test_one_hour_sleep_links_recovery_training_and_nutrition():
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    sleep = [{
+        "start_time": (now - timedelta(hours=2)).isoformat(),
+        "end_time": (now - timedelta(hours=1)).isoformat(),
+    }]
+
+    body = [
+        {"measured_at": "2026-07-16T07:00:00+00:00", "weight_kg": 74},
+        {"measured_at": "2026-07-15T07:00:00+00:00", "weight_kg": 72},
+    ]
+    result = build_summary([], sleep, body, now=now)
+
+    assert result["readiness"]["status"] == "恢复不足"
+    assert result["workout"]["intensity"] == "恢复"
+    assert "补觉" in result["workout"]["title"] or "休息" in result["workout"]["title"]
+    assert result["workout"]["duration"] == "0–30分钟"
+    assert "0–200千卡" in result["nutrition"]["adjustment"]
+    assert "不因单日体重" in result["nutrition"]["adjustment"]
+    coaching_text = str(result["daily_coaching"])
+    assert "取消高强度" in coaching_text
+    assert "睡眠" in coaching_text and "饮食" in coaching_text
+
+
+def test_single_day_weight_jump_does_not_trigger_crash_diet():
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    body = [
+        {"measured_at": "2026-07-16T07:00:00+00:00", "weight_kg": 74, "body_fat_pct": 27},
+        {"measured_at": "2026-07-15T07:00:00+00:00", "weight_kg": 72, "body_fat_pct": 26.8},
+    ]
+
+    result = build_summary([], [], body, profile={"sex": "男"}, now=now)
+
+    assert result["body_composition"]["single_day_weight_spike"] is True
+    assert "不因单日体重" in result["nutrition"]["adjustment"]
+    assert "跳餐" in result["nutrition"]["adjustment"]
+    assert "未来3天" in result["daily_coaching"]["experiment"]
+    assert "盐分" in result["daily_coaching"]["experiment"]
+
+
+def test_rolling_weight_gain_with_food_logs_changes_only_one_variable():
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    body = []
+    for offset in range(14):
+        weight = 74.0 if offset < 7 else 73.4
+        body.append({
+            "measured_at": (now - timedelta(days=offset)).isoformat(),
+            "weight_kg": weight,
+            "body_fat_pct": 27.0,
+        })
+    nutrition = [
+        {
+            "eaten_at": (now - timedelta(days=offset)).isoformat(),
+            "total_kcal": 2000,
+            "protein_g": 120,
+        }
+        for offset in range(5)
+    ]
+
+    result = build_summary([], [], body, profile={"sex": "男"}, nutrition=nutrition, now=now)
+
+    assert result["body_composition"]["weight_rolling_change_kg"] > 0.2
+    assert "100–150千卡" in result["nutrition"]["adjustment"]
+    assert "只" in result["daily_coaching"]["experiment"]
+    assert "一个变量" in result["daily_coaching"]["experiment"]
+    assert "不同时增加高强度" in result["daily_coaching"]["experiment"]
+
+
+def test_integrated_coaching_contains_all_linked_domains():
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    result = build_summary([], [], [], now=now)
+
+    assert {item["area"] for item in result["daily_coaching"]["inputs"]} == {
+        "睡眠", "体重与体脂", "运动与日常活动", "饮食记录"
+    }
+    assert {item["area"] for item in result["daily_coaching"]["linked_actions"]} == {
+        "运动", "饮食", "恢复", "测量"
+    }
+    assert len(result["daily_coaching"]["connections"]) == 4

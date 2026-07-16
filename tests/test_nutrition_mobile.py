@@ -10,14 +10,15 @@ from app.meal_analysis import _json_from_text
 
 def test_concrete_nutrition_plan_explains_food_weight():
     body=[{"measured_at":"2026-07-07T08:00:00+08:00","weight_kg":74,"body_fat_pct":27}]
-    nutrition=build_summary([],[],body,profile={"sex":"男"})["nutrition"]
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
+    nutrition=build_summary([],[],body,profile={"sex":"男"},now=now)["nutrition"]
     assert nutrition["protein_target"] == "118–148克/天"
     assert "鸡蛋" in nutrition["protein_explanation"]
     assert "约需18个" in nutrition["protein_explanation"]
     assert len(nutrition["daily_menu"]) == 4
-    assert any("熟米饭200克" in item["foods"] for item in nutrition["daily_menu"])
-    assert "鸡蛋3个" in nutrition["today_food_goal"]
-    assert "达到118–148克/天的最低目标" in nutrition["today_food_goal"]
+    assert any("蔬菜300克" in item["foods"] for item in nutrition["daily_menu"])
+    assert "主要蛋白质食物合计约" in nutrition["today_food_goal"]
+    assert "覆盖118–148克/天的下限" in nutrition["today_food_goal"]
     assert "热量缺口" in nutrition["energy_strategy"]
 
 def test_decision_explanation_is_data_to_reason_chain():
