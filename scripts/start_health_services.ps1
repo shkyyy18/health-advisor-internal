@@ -12,7 +12,7 @@ try {
         throw "Health service launcher exited with code $LASTEXITCODE."
     }
     if (-not $Quiet) {
-        Write-Output '健康助手和 ngrok 已检查并启动。'
+        Write-Output 'Health Assistant checked; ngrok is allowed only with HEALTH_ENABLE_NGROK=true.'
     }
 } finally {
     Pop-Location

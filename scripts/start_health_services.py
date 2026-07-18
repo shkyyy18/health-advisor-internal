@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 CREATE_NO_WINDOW = 0x08000000
+TRUE_VALUES = {"1", "true", "yes", "on"}
 PROJECT = Path(__file__).absolute().parent.parent
 LOGS = PROJECT / "logs"
 LOGS.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,11 @@ def env_values() -> dict[str, str]:
     return values
 
 
+def ngrok_enabled(values: dict[str, str] | None = None) -> bool:
+    configured = env_values() if values is None else values
+    return configured.get("HEALTH_ENABLE_NGROK", "").strip().lower() in TRUE_VALUES
+
+
 def launch(command: list[str], stdout_name: str, stderr_name: str) -> None:
     stdout = (LOGS / stdout_name).open("ab")
     stderr = (LOGS / stderr_name).open("ab")
@@ -75,15 +81,20 @@ def main() -> None:
     else:
         log("健康助手已在运行。")
 
+    values = env_values()
+    if not ngrok_enabled(values):
+        log("ngrok is disabled by default; set HEALTH_ENABLE_NGROK=true only after a separate security review.")
+        return
+
     if not port_open(4040):
         ngrok = shutil.which("ngrok")
         if not ngrok:
-            log("未找到 ngrok.exe；仅启动本地健康助手。")
+            log("ngrok was explicitly enabled but the executable was not found; keeping the service local-only.")
             return
-        callback = env_values().get("STRAVA_WEBHOOK_CALLBACK_URL", "")
+        callback = values.get("STRAVA_WEBHOOK_CALLBACK_URL", "")
         host = urlparse(callback).hostname
         if not host:
-            log(".env 中未配置有效的 STRAVA_WEBHOOK_CALLBACK_URL；跳过 ngrok。")
+            log("ngrok was explicitly enabled but no valid callback host is configured; skipping the public tunnel.")
             return
         launch(
             [ngrok, "http", f"--url={host}", "8000", "--log=stdout"],
@@ -91,10 +102,10 @@ def main() -> None:
             "ngrok.err.log",
         )
         if not wait_for_port(4040):
-            raise RuntimeError("ngrok 未能在 4040 端口启动。")
-        log(f"ngrok 已启动：https://{host}")
+            raise RuntimeError("ngrok did not start its local admin port 4040.")
+        log("ngrok started after explicit local opt-in.")
     else:
-        log("ngrok 已在运行。")
+        log("ngrok is already running.")
 
 
 if __name__ == "__main__":

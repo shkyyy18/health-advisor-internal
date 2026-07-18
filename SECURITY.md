@@ -13,7 +13,8 @@ Include a minimal reproduction with synthetic data only. Never send a real Xiaom
 ## Security assumptions
 
 - The FastAPI service is designed to bind to `127.0.0.1` by default.
-- Public-tunnel access to the mobile page requires the configured Basic Auth password.
+- Public tunnels are disabled by default and require the explicit local opt-in `HEALTH_ENABLE_NGROK=true`.
+- Before enabling a public tunnel, separately review authentication, callback scope, exposed routes, logs, and personal-health-data handling; the mobile page must have a configured Basic Auth password.
 - SQLite, credentials, exports, photos, and logs are local sensitive data.
 - Mi Fitness cloud access is unofficial and can change without notice.
 - The application is not a medical device and does not provide diagnosis or treatment.

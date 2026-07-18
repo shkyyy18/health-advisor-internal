@@ -95,6 +95,8 @@ pip install -e ".[dev,xiaomi]"
 
 本地看板：`http://127.0.0.1:8000/`
 
+Public tunnels are **disabled by default**. The startup script only attempts to launch ngrok when `.env` explicitly contains `HEALTH_ENABLE_NGROK=true` and authentication, privacy, exposed routes, and log handling have been reviewed separately. Keep the value `false` for normal local use; a configured Strava callback URL alone must never enable public access.
+
 ## 首次连接小米
 
 桥接器提供健康数据读取接口；当前二维码登录辅助脚本仍由本项目的 `mijiaAPI` 可选依赖提供：
