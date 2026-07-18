@@ -22,8 +22,8 @@ from app.meal_analysis import (
 )
 from app.config import PROJECT_ROOT, settings
 from app.db import (
-    connect, init_db, list_activities, load_health_snapshot, save_photo_nutrition,
-    save_quick_nutrition,
+    connect, init_db, list_activities, list_body, list_daily_metrics, list_nutrition,
+    list_sleep, load_health_snapshot, save_photo_nutrition, save_quick_nutrition,
 )
 from app.xiaomi_sync import XiaomiSyncError, sync_mi_fitness
 from app.strava import (
@@ -323,6 +323,26 @@ async def sync_strava():
 @app.get("/api/activities")
 def activities(limit: int = Query(default=30, ge=1, le=500)):
     return list_activities(limit)
+
+
+@app.get("/api/sleep")
+def sleep_records(limit: int = Query(default=30, ge=1, le=500)):
+    return list_sleep(limit)
+
+
+@app.get("/api/daily-metrics")
+def daily_metrics(limit: int = Query(default=30, ge=1, le=500)):
+    return list_daily_metrics(limit)
+
+
+@app.get("/api/body")
+def body_records(limit: int = Query(default=30, ge=1, le=500)):
+    return list_body(limit)
+
+
+@app.get("/api/nutrition")
+def nutrition_records(limit: int = Query(default=30, ge=1, le=500)):
+    return list_nutrition(limit)
 
 
 @app.post("/api/body")

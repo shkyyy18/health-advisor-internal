@@ -2,7 +2,7 @@
 
 ## Project scope
 
-- Stable path: `D:\AIWorkspace\projects\health_assistant`.
+- Stable path: `D:\CodexWorkspace\projects\health_assistant`.
 - This is a local-first, data-driven fat-loss advisor that combines body composition, sleep, activity, Strava, and food logs into explainable weekly actions.
 - Mi Fitness acquisition is an external data-source dependency provided by `mi_fitness_data_bridge`; it is not this product's headline or a vendored component.
 - This project is for personal fitness and weight management, not medical diagnosis or treatment.

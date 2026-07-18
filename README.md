@@ -50,8 +50,10 @@
 小米连接器已经拆分为独立项目：
 
 ```text
-D:\AIWorkspace\projects\mi_fitness_data_bridge
+D:\CodexWorkspace\projects\mi_fitness_data_bridge
 ```
+
+> `D:\AIWorkspace` is a junction that points to the same parent directory for historical compatibility; new documentation and scripts use the stable `D:\CodexWorkspace` path.
 
 - **Mi Fitness Data Bridge：**帮助用户拥有、导出和复用自己的小米健康数据；
 - **Health Advisor：**把小米、Strava 和饮食数据组合起来，帮助用户真正执行减脂计划。
@@ -77,7 +79,7 @@ Strava API ─────────────┤
 推荐把两个仓库放在同一个父目录：
 
 ```powershell
-cd D:\AIWorkspace\projects
+cd D:\CodexWorkspace\projects
 git clone https://github.com/shkyyy18/mi-fitness-data-bridge.git mi_fitness_data_bridge
 git clone https://github.com/shkyyy18/health-advisor.git health_assistant
 cd health_assistant
@@ -86,6 +88,8 @@ python -m venv .venv
 pip install -e ..\mi_fitness_data_bridge
 pip install -e ".[dev,xiaomi]"
 ```
+
+> If you previously used `D:\AIWorkspace`, that path is a junction to the same location; the stable path is `D:\CodexWorkspace\projects\health_assistant`.
 
 复制 `.env.example` 为 `.env`，填写本地配置，然后运行：
 

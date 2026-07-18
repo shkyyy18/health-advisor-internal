@@ -38,7 +38,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask `
     -TaskName $TaskName `
-    -Description 'Start the local health assistant and its Strava webhook tunnel after logon.' `
+    -Description 'Start the local health assistant after logon. Public tunnels (ngrok) are disabled by default and will only be started when HEALTH_ENABLE_NGROK=true is explicitly configured after a separate security review.' `
     -Action $action `
     -Trigger $trigger `
     -Principal $principal `

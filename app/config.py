@@ -82,7 +82,7 @@ class Settings:
             mi_fitness_sync_days=_int_from_env("MI_FITNESS_SYNC_DAYS", 14, 1, 90),
             mobile_access_password=os.getenv("MOBILE_ACCESS_PASSWORD", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-5.6-luna"),
+            openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
         )
 
 
