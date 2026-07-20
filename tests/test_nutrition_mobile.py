@@ -62,15 +62,17 @@ def test_dashboard_renders_week_comparison_and_concrete_food_plan():
     html = main.templates.env.get_template("index.html").render(
         summary=summary, activities=[], connected=False
     )
-    assert "最近一次体脂" in html
-    assert "本周体重均值" in html
-    assert "上周体脂均值" in html
-    assert "近5次称重表" in html
-    assert "<th>时间</th>" in html
-    assert "<th>体脂率 (%)</th>" in html
-    assert "<th>体重 (kg)</th>" in html
-    assert "<th>去脂体重 (kg)</th>" in html
-    assert "07-10 08:00" in html
+    assert "体重趋势" in html
+    assert "体脂趋势" in html
+    assert "睡眠时长" in html
+    assert "快速记录饮食" in html
+    assert "今日训练" in html
+    assert "今日营养目标" in html
+    assert "数据透明度" in html
+    assert "最近活动" in html
+    assert 'window.__DASHBOARD_DATA' in html
+    assert '/static/css/dashboard.css' in html
+    assert '/static/js/dashboard.js' in html
 
 def test_meal_upload_uses_lunch_when_meal_type_is_omitted(monkeypatch):
     fake = {

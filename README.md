@@ -113,6 +113,19 @@ python scripts\mijia_health_sync.py sync
 
 登录文件位于 `data\.mijia\auth.json`，包含敏感 token，不得上传、打印或分享。
 
+## 每日自动同步
+
+计划任务 `HealthAssistantDailySync` 每天 08:10 和 21:40 自动运行 `scripts\daily_sync.py`：通过本地服务接口同步小米 Mi Fitness（睡眠、体成分、日常指标）和 Strava 活动，结果写入 `logs\daily_sync.log`，任务返回码非 0 表示有失败项。`StartWhenAvailable` 会在开机后补跑错过的同步。
+
+安装或卸载：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_sync_task.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_sync_task.ps1 -Uninstall
+```
+
+手工同步一次：`python scripts\daily_sync.py`。小米 token 过期时同步会失败，需要重新执行 `python scripts\mijia_health_sync.py login`。
+
 ## 饮食记录
 
 打开 `http://127.0.0.1:8000/mobile`：

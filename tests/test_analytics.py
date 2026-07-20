@@ -26,7 +26,7 @@ def test_low_sleep_reduces_intensity():
     result = build_summary([], sleep, [])
     assert any("不建议安排高强度" in text for text in result["suggestions"])
     assert result["readiness"]["status"] == "恢复不足"
-    assert result["workout"]["intensity"] == "低强度耐力"
+    assert result["workout"]["intensity"] == "恢复"
 
 
 def test_body_fat_produces_transparent_staged_target():

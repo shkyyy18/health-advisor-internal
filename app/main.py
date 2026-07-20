@@ -11,8 +11,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from urllib.parse import urlparse
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
@@ -43,6 +45,9 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="数据驱动减脂健康顾问", version="0.2.0", lifespan=lifespan)
 templates = Jinja2Templates(directory=str(PROJECT_ROOT / "app" / "templates"))
+templates.env.auto_reload = True
+templates.env.cache_size = 0
+app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "app" / "static")), name="static")
 logger = logging.getLogger(__name__)
 
 
@@ -162,6 +167,7 @@ def dashboard(request: Request):
             "connected": snapshot["strava_connected"],
             "activities": snapshot["activities"][:10],
             "summary": summary,
+            "dashboard_data": _build_dashboard_data(),
         },
     )
 
@@ -188,7 +194,14 @@ def _range_midpoint(value: object) -> float | None:
 
 @app.post("/api/meals/quick")
 def save_quick_meal(item: QuickMeal):
-    eaten_at = (item.eaten_at or datetime.now().astimezone()).isoformat()
+    if item.eaten_at is not None:
+        eaten_dt = item.eaten_at
+        if eaten_dt.tzinfo is None:
+            # datetime-local submits a naive timestamp; interpret it as local time.
+            eaten_dt = eaten_dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+    else:
+        eaten_dt = datetime.now().astimezone()
+    eaten_at = eaten_dt.isoformat()
     meal_type = item.meal_type.strip() or "unknown"
     description = item.description.strip()
     if not description:
@@ -271,8 +284,11 @@ async def strava_callback(code: str, state: str, error: str | None = None):
         raise HTTPException(status_code=400, detail="无效的OAuth state") from exc
     if not hmac.compare_digest(signature, _state_signature(nonce)):
         raise HTTPException(status_code=400, detail="OAuth state校验失败")
-    await exchange_code(code)
-    await sync_activities()
+    try:
+        await exchange_code(code)
+        await sync_activities()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
     return RedirectResponse("/", status_code=303)
 
 
@@ -317,6 +333,8 @@ async def sync_strava():
         count = await sync_activities()
     except (RuntimeError, StravaConfigurationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
     return {"synced": count}
 
 
@@ -401,3 +419,104 @@ def add_sleep(item: SleepSession):
 def summary():
     _, result = _current_health_data()
     return result
+
+
+def _iso_to_local_date(iso_string: str) -> str:
+    """Extract YYYY-MM-DD from an ISO timestamp in the local timezone."""
+    if not iso_string:
+        return ""
+    # Handles both '+08:00' and 'Z' suffixes; localizes to the date portion.
+    try:
+        parsed = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+    except ValueError:
+        return iso_string[:10]
+    return parsed.astimezone().date().isoformat()
+
+
+def _build_dashboard_data() -> dict:
+    snapshot, summary = _current_health_data()
+
+    body_points = []
+    for row in sorted(snapshot.get("body") or [], key=lambda r: r.get("measured_at", "")):
+        measured_at = row.get("measured_at") or ""
+        date = _iso_to_local_date(measured_at)
+        if not date:
+            continue
+        weight = row.get("weight_kg")
+        body_fat = row.get("body_fat_pct")
+        lean = None
+        if weight is not None and body_fat is not None:
+            lean = round(weight * (1 - body_fat / 100), 2)
+        body_points.append({
+            "date": date,
+            "weight": weight,
+            "body_fat": body_fat,
+            "lean_mass": lean,
+        })
+
+    sleep_points = []
+    for row in sorted(snapshot.get("sleep") or [], key=lambda r: r.get("sleep_date") or r.get("start_time") or ""):
+        sleep_date = row.get("sleep_date") or _iso_to_local_date(row.get("start_time") or "")
+        if not sleep_date:
+            continue
+        duration = row.get("duration_minutes") or 0
+        if duration < 30:  # skip naps
+            continue
+        sleep_points.append({
+            "date": sleep_date,
+            "hours": round(duration / 60, 1),
+            "deep_hours": round((row.get("deep_minutes") or 0) / 60, 1),
+            "rem_hours": round((row.get("rem_minutes") or 0) / 60, 1),
+        })
+
+    activity_points = []
+    for row in sorted(snapshot.get("activities") or [], key=lambda r: r.get("start_date", "")):
+        start = row.get("start_date") or ""
+        date = _iso_to_local_date(start)
+        if not date:
+            continue
+        moving = row.get("moving_time") or 0
+        distance = row.get("distance") or 0
+        activity_points.append({
+            "date": date,
+            "minutes": int(moving / 60),
+            "distance_km": round(distance / 1000, 1),
+            "type": row.get("sport_type") or "活动",
+            "avg_hr": row.get("average_heartrate"),
+        })
+
+    nutrition_points = []
+    for row in sorted(snapshot.get("nutrition") or [], key=lambda r: r.get("eaten_at") or ""):
+        eaten_at = row.get("eaten_at") or ""
+        date = _iso_to_local_date(eaten_at)
+        if not date:
+            continue
+        nutrition_points.append({
+            "date": date,
+            "meal": row.get("meal_type"),
+            "kcal": row.get("total_kcal"),
+            "protein": row.get("protein_g"),
+            "carb": row.get("carb_g"),
+            "fat": row.get("fat_g"),
+        })
+
+    return {
+        "period_days": 30,
+        "body": body_points[-60:],
+        "sleep": sleep_points[-60:],
+        "activities": activity_points[-60:],
+        "nutrition": nutrition_points[-60:],
+        "summary": {
+            "latest_weight_kg": summary.get("body_composition", {}).get("latest_weight_kg"),
+            "latest_body_fat_pct": summary.get("body_composition", {}).get("latest_body_fat_pct"),
+            "latest_sleep_hours": summary.get("sleep", {}).get("latest_hours"),
+            "readiness_status": summary.get("readiness", {}).get("status"),
+            "coaching_status": summary.get("daily_coaching", {}).get("status"),
+            "coaching_headline": summary.get("daily_coaching", {}).get("headline"),
+        },
+    }
+
+
+@app.get("/api/dashboard-data")
+def dashboard_data():
+    return _build_dashboard_data()

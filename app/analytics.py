@@ -91,7 +91,7 @@ def _body_analysis(
     recent_bf = [_number(item.get("body_fat_pct")) for item in bf_records[:7]]
     recent_bf = [value for value in recent_bf if value is not None]
 
-    reference_tz = _parse(str(latest["measured_at"])).tzinfo if latest else timezone.utc
+    reference_tz = now.astimezone().tzinfo
     local_today = now.astimezone(reference_tz).date()
     this_week_start = local_today - timedelta(days=local_today.weekday())
     next_week_start = this_week_start + timedelta(days=7)
@@ -385,7 +385,8 @@ def _daily_metrics_context(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     resting_baseline = median(prior_resting) if prior_resting else None
     resting_delta = latest_resting - resting_baseline if latest_resting is not None and resting_baseline is not None else None
     latest_stress = _number(latest.get("stress_avg"))
-    return {"latest_date": latest.get("metric_date"), "latest_steps": round(_number(latest.get("steps")) or 0) if latest else None, "average_steps": round(mean(steps)) if steps else None, "average_active_minutes": round(mean(active_minutes)) if active_minutes else None, "average_active_calories": round(mean(active_calories)) if active_calories else None, "latest_resting_hr": round(latest_resting) if latest_resting is not None else None, "resting_baseline_hr": round(resting_baseline) if resting_baseline is not None else None, "resting_hr_delta": round(resting_delta) if resting_delta is not None else None, "latest_stress": round(latest_stress) if latest_stress is not None else None}
+    latest_steps = _number(latest.get("steps"))
+    return {"latest_date": latest.get("metric_date"), "latest_steps": round(latest_steps) if latest_steps is not None else None, "average_steps": round(mean(steps)) if steps else None, "average_active_minutes": round(mean(active_minutes)) if active_minutes else None, "average_active_calories": round(mean(active_calories)) if active_calories else None, "latest_resting_hr": round(latest_resting) if latest_resting is not None else None, "resting_baseline_hr": round(resting_baseline) if resting_baseline is not None else None, "resting_hr_delta": round(resting_delta) if resting_delta is not None else None, "latest_stress": round(latest_stress) if latest_stress is not None else None}
 
 
 def _mifflin_bmr(weight: float | None, profile: dict[str, Any]) -> float | None:
@@ -395,9 +396,369 @@ def _mifflin_bmr(weight: float | None, profile: dict[str, Any]) -> float | None:
     return 10 * weight + 6.25 * height - 5 * age + (5 if sex == "男" else -161)
 
 
+# Weekday-to-sport mapping gives variety while keeping a predictable weekly rhythm.
+# 0=Mon bodyweight, 1=Tue swim, 2=Wed rest, 3=Thu run, 4=Fri bodyweight, 5=Sat ride, 6=Sun rest
+_WEEKDAY_SPORT = ["bodyweight", "swim", "rest", "run", "bodyweight", "ride", "rest"]
+
+_WORKOUT_LIBRARY: dict[str, dict[str, dict[str, Any]]] = {
+    "swim": {
+        "recovery": {
+            "title": "轻松游泳恢复",
+            "duration": "30–40分钟",
+            "rationale": "恢复不足时用水中的低阻力活动促进血流，不冲击关节和神经系统。",
+            "warmup": [
+                {"name": "岸上动态热身", "detail": "肩关节环绕前后各10次、颈部侧向拉伸每侧15秒、躯干左右旋转各10次", "duration": "3分钟"},
+                {"name": "水中适应", "detail": "慢速自由泳或蛙泳，专注水下吐气节奏", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "轻松连续游", "detail": "自由泳或蛙泳任选，RPE 3分，能完整说句子", "sets": 1, "reps": "400–600米", "rest": "无", "note": "不要计时，动作放松"},
+            ],
+            "cooldown": [
+                {"name": "放松游", "detail": "任意泳姿，越慢越好", "duration": "5分钟"},
+                {"name": "肩部/背部拉伸", "detail": "每侧15秒", "duration": "3分钟"},
+            ],
+            "fallback": "若精神很差或泳池人多，改为水中行走10分钟 + 池边拉伸。",
+        },
+        "easy": {
+            "title": "游泳技术 + 低强度耐力",
+            "duration": "40–50分钟",
+            "rationale": "在低强度下打磨动作效率，同时积累有氧时间。",
+            "warmup": [
+                {"name": "岸上动态热身", "detail": "肩部环绕、直臂下压、转体各10次", "duration": "3分钟"},
+                {"name": "水中适应", "detail": "100米慢速配合呼吸练习", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "技术游", "detail": "25米专注一个技术点（如手部入水/身体滚动），RPE 3分", "sets": 6, "reps": "25米", "rest": "15秒", "note": "质量优先，不计速度"},
+                {"name": "轻松连续游", "detail": "自由泳或蛙泳，RPE 4分", "sets": 1, "reps": "400–600米", "rest": "无", "note": "保持呼吸规律"},
+            ],
+            "cooldown": [
+                {"name": "放松游", "detail": "100米任意泳姿", "duration": "3分钟"},
+                {"name": "拉伸", "detail": "肩、背、腿每侧15秒", "duration": "3分钟"},
+            ],
+            "fallback": "减少技术游到4组，连续游改为200米。",
+        },
+        "tempo": {
+            "title": "游泳节奏训练",
+            "duration": "50–60分钟",
+            "rationale": "用可控的中等强度段落提高有氧节奏感。",
+            "warmup": [
+                {"name": "岸上动态热身", "detail": "肩、躯干、髋动态拉伸", "duration": "3分钟"},
+                {"name": "水中热身", "detail": "200米慢速 + 4×25米逐渐加速", "duration": "8分钟"},
+            ],
+            "main": [
+                {"name": "节奏游", "detail": "RPE 6分，呼吸明显加深但可说短句", "sets": 4, "reps": "100米", "rest": "30秒", "note": "保持每100米时间波动不超过5秒"},
+                {"name": "轻松恢复游", "detail": "RPE 3分", "sets": 1, "reps": "200米", "rest": "无", "note": "衔接主项"},
+            ],
+            "cooldown": [
+                {"name": "放松游", "detail": "200米", "duration": "5分钟"},
+                {"name": "拉伸", "detail": "肩背每侧20秒", "duration": "3分钟"},
+            ],
+            "fallback": "节奏游减到3组，或每组改为75米。",
+        },
+    },
+    "run": {
+        "recovery": {
+            "title": "轻松慢跑恢复",
+            "duration": "25–35分钟",
+            "rationale": "用最轻松的跑步节奏帮助身体排出代谢废物。",
+            "warmup": [
+                {"name": "步行", "detail": "自然步速，激活下肢", "duration": "3分钟"},
+                {"name": "动态拉伸", "detail": "高抬腿20次、后踢腿20次、弓步转体每侧5次", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "超轻松慢跑", "detail": "RPE 3分，比快走略快，能完整聊天", "sets": 1, "reps": "20–25分钟", "rest": "无", "note": "不要看配速"},
+            ],
+            "cooldown": [
+                {"name": "步行", "detail": "逐渐降速", "duration": "3分钟"},
+                {"name": "小腿/大腿拉伸", "detail": "每侧20秒", "duration": "3分钟"},
+            ],
+            "fallback": "若腿沉或膝盖不适，改为快走15分钟 + 拉伸。",
+        },
+        "easy": {
+            "title": "有氧基础跑",
+            "duration": "35–45分钟",
+            "rationale": "在能完整对话的轻松配速下积累有氧能力。",
+            "warmup": [
+                {"name": "步行", "detail": "唤醒下肢", "duration": "3分钟"},
+                {"name": "动态热身", "detail": "高抬腿30次、后踢腿30次、开合跳30次", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "轻松跑", "detail": "RPE 4分，能完整说话", "sets": 1, "reps": "25–35分钟", "rest": "无", "note": "选择平坦路线"},
+            ],
+            "cooldown": [
+                {"name": "步行", "detail": "5分钟慢走", "duration": "5分钟"},
+                {"name": "拉伸", "detail": "髋屈肌、腘绳肌、小腿每侧20秒", "duration": "4分钟"},
+            ],
+            "fallback": "改为跑走结合：跑3分钟 + 走1分钟，重复6–8次。",
+        },
+        "tempo": {
+            "title": "节奏跑",
+            "duration": "45–55分钟",
+            "rationale": "用略高于日常有氧的强度提升乳酸阈值。",
+            "warmup": [
+                {"name": "慢跑", "detail": "RPE 3分", "duration": "8分钟"},
+                {"name": "动态热身", "detail": "高抬腿、后踢腿、加速跑4×50米", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "节奏跑", "detail": "RPE 6分，呼吸深但可控，说短句", "sets": 3, "reps": "6分钟", "rest": "2分钟轻松走/慢跑", "note": "保持配速稳定"},
+                {"name": "轻松慢跑", "detail": "RPE 4分", "sets": 1, "reps": "5分钟", "rest": "无", "note": "衔接"},
+            ],
+            "cooldown": [
+                {"name": "慢跑", "detail": "RPE 3分", "duration": "5分钟"},
+                {"name": "拉伸", "detail": "下肢全套每侧20秒", "duration": "5分钟"},
+            ],
+            "fallback": "节奏段改为2×6分钟，或改为轻松跑。",
+        },
+    },
+    "bodyweight": {
+        "recovery": {
+            "title": "低冲击护膝恢复训练",
+            "duration": "25–35分钟",
+            "rationale": "按AAOS膝盖调理原则：强化膝盖周围肌肉，让肌肉替关节吸收冲击；全程低冲击、不负重，恢复日安全执行。",
+            "sources": [
+                "AAOS（美国骨科医师学会）膝盖调理方案 orthoinfo.aaos.org/en/recovery/knee-conditioning-program/",
+                "Mayo Clinic（梅奥诊所）核心力量动作库 mayoclinic.org/healthy-lifestyle/fitness/multimedia/core-strength/sls-20076575",
+            ],
+            "warmup": [
+                {"name": "轻松步行或原地踏步", "detail": "自然步速，身体微微发热即可", "duration": "5分钟", "source": "AAOS",
+                 "guide": "在屋里来回走，或原地踏步：站直，交替抬膝，双臂自然摆动，前脚掌先落地、落地放轻。AAOS要求力量训练前做5–10分钟低冲击热身，目的是让关节和肌肉热起来，不是练强度。"},
+            ],
+            "main": [
+                {"name": "仰卧直腿抬高", "detail": "一腿屈膝踩地，另一腿绷直慢抬慢放", "sets": 3, "reps": "10次每侧", "rest": "30秒", "note": "膝盖全程伸直", "source": "AAOS",
+                 "guide": "仰卧，一条腿屈膝踩地，另一条腿伸直、脚尖勾起。收紧伸直腿的大腿前侧肌肉，缓慢抬到与另一侧大腿同高，停2秒，再用2–3秒慢慢放下。要领：膝盖全程绷直不弯，腰贴地，靠大腿发力而不是甩腿。这是对膝盖压力最小的股四头肌训练——膝盖全程不承重、不屈曲。"},
+                {"name": "臀桥", "detail": "顶峰夹臀停2秒，慢放", "sets": 2, "reps": "12–15次", "rest": "30秒", "note": "用臀发力不用腰", "source": "Mayo Clinic",
+                 "guide": "仰卧屈膝，双脚踩地与髋同宽，脚跟离臀部约一脚掌。收紧腹部和臀部把髋向上顶，到肩—髋—膝成一条直线，顶峰夹紧臀部停2秒，再慢放。要领：发力的是臀部；如果腰酸说明在用腰代偿，减小幅度重新夹臀；顶起时肋骨不要外翻。臀肌强了，走路爬楼时膝盖的负担就小。"},
+                {"name": "侧卧髋外展", "detail": "上腿伸直慢抬，骨盆不后倒", "sets": 2, "reps": "10次每侧", "rest": "30秒", "note": "脚尖朝前", "source": "AAOS",
+                 "guide": "侧卧，下方腿微屈，上方腿伸直、脚尖朝正前方。缓慢向上抬约30–40厘米，停2秒，慢放。要领：骨盆保持垂直不向后倒（可手扶髋部自查），动作慢、不甩。练臀中肌——这块肌肉是走路和单腿支撑时膝盖不内扣的关键。"},
+                {"name": "扶椅半蹲", "detail": "只下蹲约20–25厘米，不深蹲", "sets": 3, "reps": "10次", "rest": "45秒", "note": "重心在脚跟", "source": "AAOS",
+                 "guide": "双脚与肩同宽站在椅背后，双手轻扶椅背。胸口抬起，像坐椅子一样只下蹲约20–25厘米（四分之一蹲），重心放在脚后跟，停2–5秒，再推脚跟起身。要领：膝盖方向始终与脚尖一致、不内扣；蹲得浅是AAOS为控制髌骨压力的刻意选择，不要蹲到大腿水平。"},
+                {"name": "站姿腘绳肌弯举", "detail": "脚跟向后上方抬起，双膝并拢", "sets": 3, "reps": "10次每侧", "rest": "30秒", "note": "停2秒慢放", "source": "AAOS",
+                 "guide": "扶椅背站立，一侧膝盖弯曲，把脚跟向后上方抬起（像用脚跟去够屁股），抬到无痛的最大幅度停2秒，慢放。要领：两侧膝盖保持并拢，不要为了让脚跟抬得更高而把大腿向前抬；应该感觉大腿后侧在发力。"},
+                {"name": "提踵", "detail": "缓慢踮脚尖到最高，停1秒慢放", "sets": 2, "reps": "10–15次", "rest": "30秒", "note": "扶椅保持平衡", "source": "AAOS",
+                 "guide": "扶椅背站立，双脚与肩同宽，缓慢踮起脚尖到最高点，停1秒，再用2–3秒慢慢落下。要领：身体直上直下不前后晃，重量均匀落在前脚掌上。强化小腿，帮助日常行走时脚踝和膝盖的稳定。"},
+                {"name": "跪姿平板支撑", "detail": "前臂+膝盖着地，身体成直线", "sets": 2, "reps": "3次深呼吸", "rest": "30秒", "note": "Mayo新手版", "source": "Mayo Clinic",
+                 "guide": "俯卧，前臂撑地、手肘在肩膀正下方，双膝着地（不是脚尖），把身体撑起到膝盖—髋—肩成一条直线。收紧腹部，想象手肘和膝盖互相靠近（实际不动），保持3次深呼吸。要领：不塌腰、不撅臀；Mayo给新手的起始版本就是跪姿，不要急于做脚尖版。"},
+                {"name": "鸟狗式", "detail": "四点跪姿，对侧手脚伸展", "sets": 2, "reps": "5–8次每侧", "rest": "30秒", "note": "骨盆不歪", "source": "Mayo Clinic",
+                 "guide": "四点跪姿：手在肩正下方、膝在髋正下方，背部放平。收紧腹部，先只把一条手臂向前平举，保持3次深呼吸后换边；再只向后伸直一条腿后换边；熟练后做对侧手脚同时伸展。要领：腰不塌、骨盆不左右歪，头顶到尾椎成一条线，动作越慢越好。这是Mayo核心库中训练躯干稳定、对腰背最友好的动作之一。"},
+            ],
+            "cooldown": [
+                {"name": "站姿股四头肌拉伸", "detail": "扶墙拉脚踝，脚跟靠近臀部", "duration": "每侧30秒 × 2次", "source": "AAOS",
+                 "guide": "扶墙站立，一侧手抓住同侧脚踝，轻轻把脚跟拉向臀部，双膝并拢，感到大腿前侧轻微牵拉即可，保持30秒后换边。要领：不要弓腰或扭转身体，拉伸不应该疼。"},
+                {"name": "仰卧腘绳肌拉伸", "detail": "抱大腿后侧轻拉", "duration": "每侧30秒 × 2次", "source": "AAOS",
+                 "guide": "仰卧，一腿屈膝踩地，另一腿抬起，双手抱在大腿后侧（不要压在膝盖关节上），轻轻把腿拉向胸口方向，感到大腿后侧牵拉即可，保持30秒后换边。抱不到可以套条毛巾在大腿上拉着。"},
+                {"name": "面墙小腿拉伸", "detail": "一腿后伸脚跟踩地，髋向墙推", "duration": "每侧30秒 × 2次", "source": "AAOS",
+                 "guide": "面对墙站立，前腿屈膝、后腿伸直且脚跟踩实地面，脚尖朝前，双手推墙，髋部缓慢向墙的方向推，感到后侧小腿和跟腱牵拉即可，保持30秒后换边。要领：后脚脚跟全程不离地，腰背不弓。"},
+            ],
+            "fallback": "所有动作组数减半，去掉扶椅半蹲；任何动作引起疼痛立即停止（AAOS原则：运动中不应感到疼痛）。",
+        },
+        "lower": {
+            "title": "无器械下肢 + 核心",
+            "duration": "40–50分钟",
+            "rationale": "增强跑步和骑行所需的下肢力量与核心稳定。",
+            "warmup": [
+                {"name": "原地慢跑", "detail": "轻松节奏", "duration": "3分钟"},
+                {"name": "动态拉伸", "detail": "弓步行走10次、侧弓步每侧8次、髋环绕10次", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "深蹲", "detail": "膝盖对准脚尖，蹲到大腿平行", "sets": 4, "reps": "15次", "rest": "60秒", "note": "可徒手或抱水瓶"},
+                {"name": "保加利亚分腿蹲", "detail": "后脚放椅上，重心在前脚", "sets": 3, "reps": "10次每侧", "rest": "60秒", "note": "不稳定可扶墙"},
+                {"name": "臀桥", "detail": "单腿或双腿，顶峰夹臀", "sets": 3, "reps": "15次", "rest": "45秒", "note": "慢下"},
+                {"name": "平板支撑", "detail": "身体成一直线", "sets": 3, "reps": "1分钟", "rest": "45秒", "note": "分次完成也 OK"},
+                {"name": "登山跑", "detail": "核心稳定，慢速控制", "sets": 3, "reps": "20次", "rest": "45秒", "note": "不要塌腰"},
+            ],
+            "cooldown": [
+                {"name": "大腿前侧/后侧拉伸", "detail": "每侧30秒", "duration": "3分钟"},
+                {"name": "髋屈肌拉伸", "detail": "每侧30秒", "duration": "2分钟"},
+            ],
+            "fallback": "深蹲改为坐站练习，分腿蹲改为原地弓步，平板支撑改为30秒。",
+        },
+        "upper": {
+            "title": "无器械上肢 + 核心",
+            "duration": "35–45分钟",
+            "rationale": "改善上肢力量与躯干抗旋转稳定，帮助骑行姿势保持。",
+            "warmup": [
+                {"name": "肩袖激活", "detail": "手臂画圈、弹力带或毛巾肩外旋各15次", "duration": "3分钟"},
+                {"name": "躯干热身", "detail": "猫牛式10次、肩胛俯卧撑10次", "duration": "4分钟"},
+            ],
+            "main": [
+                {"name": "俯卧撑", "detail": "胸部贴近地面，身体成一直线", "sets": 4, "reps": "8–12次", "rest": "60秒", "note": "可改为跪姿或斜板"},
+                {"name": "反向划船", "detail": "利用餐桌/低杠，胸口拉向杠", "sets": 3, "reps": "10次", "rest": "60秒", "note": "找不到杠可用俯身划船替代"},
+                {"name": "椅上臂屈伸", "detail": "手撑椅子边缘，屈肘下沉", "sets": 3, "reps": "10次", "rest": "60秒", "note": "膝盖弯曲降低难度"},
+                {"name": "侧平板支撑", "detail": "髋不塌陷", "sets": 3, "reps": "30秒每侧", "rest": "45秒", "note": "可屈膝"},
+                {"name": "死虫式", "detail": "对侧手脚伸展，腰贴地", "sets": 3, "reps": "10次每侧", "rest": "45秒", "note": "慢速控制"},
+            ],
+            "cooldown": [
+                {"name": "胸部/肩部拉伸", "detail": "每侧30秒", "duration": "3分钟"},
+                {"name": "背部拉伸", "detail": "每侧30秒", "duration": "2分钟"},
+            ],
+            "fallback": "俯卧撑改为跪姿，反向划船改为俯身划船，椅上臂屈伸次数减半。",
+        },
+    },
+    "ride": {
+        "recovery": {
+            "title": "轻松骑行恢复",
+            "duration": "35–50分钟",
+            "rationale": "用低强度骑行促进下肢血流恢复，不增加神经疲劳。",
+            "warmup": [
+                {"name": "关节活动", "detail": "踝绕环、膝绕环、髋绕环各10次", "duration": "2分钟"},
+                {"name": "轻松骑", "detail": "RPE 2分，轻齿比高踏频", "duration": "8分钟"},
+            ],
+            "main": [
+                {"name": "恢复骑", "detail": "平坦路，RPE 3分，踏频80–90，能完整聊天", "sets": 1, "reps": "25–35分钟", "rest": "无", "note": "不爬坡、不冲刺"},
+            ],
+            "cooldown": [
+                {"name": "轻松骑", "detail": "RPE 2分", "duration": "5分钟"},
+                {"name": "下肢拉伸", "detail": "股四头肌、腘绳肌、小腿每侧20秒", "duration": "3分钟"},
+            ],
+            "fallback": "改为室内骑行台20分钟或完全休息。",
+        },
+        "easy": {
+            "title": "有氧耐力骑行",
+            "duration": "60–90分钟",
+            "rationale": "积累低强度有氧时间，这是骑行能力的基础。",
+            "warmup": [
+                {"name": "轻松骑", "detail": "RPE 2分", "duration": "10分钟"},
+                {"name": "渐进加速", "detail": "每2分钟加一档，最后1分钟到RPE 4分", "duration": "5分钟"},
+            ],
+            "main": [
+                {"name": "稳定有氧骑", "detail": "RPE 4分，踏频80–90，选择平坦或缓坡路线", "sets": 1, "reps": "45–75分钟", "rest": "无", "note": "全程能说话"},
+            ],
+            "cooldown": [
+                {"name": "轻松骑", "detail": "RPE 2分", "duration": "10分钟"},
+                {"name": "拉伸", "detail": "下肢全套", "duration": "5分钟"},
+            ],
+            "fallback": "时间减半，改为45分钟轻松骑。",
+        },
+        "tempo": {
+            "title": "骑行节奏训练",
+            "duration": "70–90分钟",
+            "rationale": "用可控的中等强度提高有氧输出能力。",
+            "warmup": [
+                {"name": "轻松骑", "detail": "RPE 2分", "duration": "10分钟"},
+                {"name": "渐进热身", "detail": "2×3分钟 RPE 4–5分，组间2分钟轻松", "duration": "10分钟"},
+            ],
+            "main": [
+                {"name": "节奏骑", "detail": "RPE 6分，呼吸深但可控，选择平坦或缓上坡", "sets": 3, "reps": "8分钟", "rest": "4分钟轻松骑", "note": "保持踏频稳定"},
+                {"name": "稳定骑", "detail": "RPE 4分", "sets": 1, "reps": "15分钟", "rest": "无", "note": "衔接"},
+            ],
+            "cooldown": [
+                {"name": "轻松骑", "detail": "RPE 2分", "duration": "10分钟"},
+                {"name": "拉伸", "detail": "下肢全套", "duration": "5分钟"},
+            ],
+            "fallback": "节奏段改为2×6分钟，或改为有氧耐力骑。",
+        },
+    },
+    "rest": {
+        "rest": {
+            "title": "完全休息或主动恢复",
+            "duration": "0–30分钟",
+            "rationale": "每周至少一天完全休息，让身体真正恢复。",
+            "warmup": [
+                {"name": "全身舒展", "detail": "原地活动肩、髋、膝、踝", "duration": "2分钟"},
+            ],
+            "main": [
+                {"name": "散步", "detail": "户外慢走，RPE 1–2分", "sets": 1, "reps": "10–15分钟", "rest": "无", "note": "可选，不做也行"},
+                {"name": "泡沫轴/拉伸", "detail": "大腿前侧、外侧、小腿各1分钟", "sets": 1, "reps": "10分钟", "rest": "无", "note": "可选"},
+            ],
+            "cooldown": [
+                {"name": "呼吸放松", "detail": "4-7-8 呼吸 4 轮", "duration": "3分钟"},
+            ],
+            "fallback": "如果今天特别累，直接躺平，不要有任何运动。",
+        },
+    },
+}
+
+
+def _build_workout(
+    *,
+    readiness: str,
+    sleep_severity: str,
+    weekday: int,
+    profile: dict[str, Any],
+    recent_sport_types: list[str] | None = None,
+) -> dict[str, Any]:
+    """Pick a concrete, coach-style workout for today."""
+    sport = _WEEKDAY_SPORT[weekday % 7]
+    recent_sport_types = recent_sport_types or []
+
+    severe_sleep = sleep_severity in {"严重不足", "明显不足"}
+
+    if readiness == "恢复不足" and severe_sleep:
+        # Sleep is critically low: prioritize rest above all else.
+        sport = "rest"
+        template_key = "rest"
+        intensity_override = "恢复"
+    elif readiness == "恢复不足":
+        # Moderate sleep debt: active recovery within the scheduled sport.
+        template_key = "recovery" if sport != "rest" else "rest"
+        intensity_override = None
+    elif readiness == "一般":
+        # Still conservative: use easy template for the scheduled sport.
+        if sport == "rest":
+            template_key = "rest"
+        else:
+            template_key = "easy" if sport in {"swim", "run", "ride"} else "lower"
+        intensity_override = None
+    else:
+        # Ready: follow the weekly plan with quality sessions.
+        if sport == "rest":
+            template_key = "rest"
+        elif sport == "bodyweight":
+            # Alternate lower/upper emphasis across the two bodyweight days.
+            template_key = "upper" if weekday == 4 else "lower"
+        else:
+            # Swim/run/ride: mix easy and tempo across the week.
+            # Mon swim=easy, Thu run=tempo, Sat ride=tempo (when ready)
+            template_key = "tempo" if (sport, weekday) in {("run", 3), ("ride", 5)} else "easy"
+        intensity_override = None
+
+    library = _WORKOUT_LIBRARY.get(sport, _WORKOUT_LIBRARY["rest"])
+    template = library.get(template_key, library.get("rest", {}))
+
+    # Determine intensity label.
+    if intensity_override:
+        intensity = intensity_override
+    elif template_key in {"recovery", "rest"}:
+        intensity = "恢复"
+    elif template_key == "tempo":
+        intensity = "节奏"
+    else:
+        intensity = "低强度耐力"
+
+    # Build human-readable steps for backwards compatibility and quick scanning.
+    steps: list[str] = []
+    for item in template.get("warmup", []):
+        steps.append(f"热身 · {item['name']}：{item['detail']}（{item['duration']}）")
+    for item in template.get("main", []):
+        detail = f"{item['sets']}组 × {item['reps']}"
+        if item.get("rest"):
+            detail += f"，组间休息{item['rest']}"
+        steps.append(f"主训练 · {item['name']}：{item['detail']}（{detail}）")
+    for item in template.get("cooldown", []):
+        steps.append(f"冷身 · {item['name']}：{item['detail']}（{item['duration']}）")
+
+    return {
+        "title": template.get("title", "休息"),
+        "intensity": intensity,
+        "duration": template.get("duration", "0分钟"),
+        "readiness": readiness,
+        "sport": sport,
+        "template": template_key,
+        "warmup": template.get("warmup", []),
+        "main": template.get("main", []),
+        "cooldown": template.get("cooldown", []),
+        "fallback": template.get("fallback", ""),
+        "steps": steps,
+        "rationale": template.get("rationale", ""),
+        "sources": template.get("sources", []),
+        "stop_rule": "出现胸痛、异常气短、眩晕、心悸或明显不适应立即停止；持续异常应寻求医疗评估。",
+    }
+
+
 def _rotating_daily_menu(*, today: Any, protein_low: int | None, protein_target: str, carb_mode: str) -> dict[str, Any]:
     """Create a date-stable rotating menu, then adjust carbohydrate portions for today's workout."""
     variants = [
+        # Week 1: classic combinations
         {"name":"鸡胸鱼虾搭配","breakfast":"鸡蛋3个 + 纯牛奶250毫升 + 干燕麦50克 + 苹果1个","breakfast_main":27.5,"breakfast_protein":"鸡蛋3个、纯牛奶250毫升","lunch":"去皮熟鸡胸肉","density":0.30,"minimum":100,"snack":"无糖高蛋白酸奶200克 + 蓝莓或草莓1份","snack_main":17.0,"snack_protein":"无糖高蛋白酸奶200克","dinner":"熟鱼虾160克","dinner_main":35.2,"carb":"rice","extra":" + 香蕉1根"},
         {"name":"牛肉鲜虾搭配","breakfast":"鸡蛋2个 + 无糖豆浆300毫升 + 全麦面包80克 + 橙子1个","breakfast_main":22.0,"breakfast_protein":"鸡蛋2个、无糖豆浆300毫升","lunch":"熟瘦牛肉","density":0.26,"minimum":120,"snack":"无糖高蛋白酸奶200克 + 苹果1个","snack_main":17.0,"snack_protein":"无糖高蛋白酸奶200克","dinner":"熟虾仁180克","dinner_main":39.6,"carb":"sweet_potato","extra":" + 香蕉1根"},
         {"name":"瘦猪肉豆腐搭配","breakfast":"无糖高蛋白酸奶250克 + 鸡蛋2个 + 干燕麦40克 + 蓝莓1份","breakfast_main":35.0,"breakfast_protein":"无糖高蛋白酸奶250克、鸡蛋2个","lunch":"熟瘦猪里脊","density":0.25,"minimum":110,"snack":"纯牛奶250毫升 + 猕猴桃1个","snack_main":8.0,"snack_protein":"纯牛奶250毫升","dinner":"北豆腐250克 + 熟虾仁100克","dinner_main":47.0,"carb":"mixed","extra":" + 香蕉1根"},
@@ -405,6 +766,15 @@ def _rotating_daily_menu(*, today: Any, protein_low: int | None, protein_target:
         {"name":"鸡肉牛肉搭配","breakfast":"无糖高蛋白酸奶250克 + 干燕麦50克 + 香蕉1根","breakfast_main":22.0,"breakfast_protein":"无糖高蛋白酸奶250克","lunch":"去皮熟鸡胸肉","density":0.30,"minimum":110,"snack":"鸡蛋2个 + 橙子1个","snack_main":13.0,"snack_protein":"鸡蛋2个","dinner":"熟瘦牛肉170克","dinner_main":44.2,"carb":"rice_pumpkin","extra":" + 纯牛奶250毫升"},
         {"name":"猪里脊鱼肉搭配","breakfast":"鸡蛋2个 + 无糖豆浆300毫升 + 蒸红薯250克","breakfast_main":22.0,"breakfast_protein":"鸡蛋2个、无糖豆浆300毫升","lunch":"熟瘦猪里脊","density":0.25,"minimum":130,"snack":"纯牛奶250毫升 + 苹果1个","snack_main":8.0,"snack_protein":"纯牛奶250毫升","dinner":"熟鱼肉180克","dinner_main":39.6,"carb":"rice_corn","extra":" + 香蕉1根"},
         {"name":"鸡肉豆腐鲜虾搭配","breakfast":"鸡蛋3个 + 纯牛奶250毫升 + 全麦馒头100克 + 苹果1个","breakfast_main":27.5,"breakfast_protein":"鸡蛋3个、纯牛奶250毫升","lunch":"去皮熟鸡胸肉","density":0.30,"minimum":100,"snack":"无糖高蛋白酸奶200克 + 草莓1份","snack_main":17.0,"snack_protein":"无糖高蛋白酸奶200克","dinner":"北豆腐250克 + 熟虾仁100克","dinner_main":47.0,"carb":"mixed_potato","extra":" + 香蕉1根"},
+        # Week 2: Sichuan-friendly and quick options
+        {"name":"辣炒鸡胸搭配","breakfast":"鸡蛋2个 + 无糖豆浆300毫升 + 全麦馒头100克 + 小番茄1份","breakfast_main":22.0,"breakfast_protein":"鸡蛋2个、无糖豆浆300毫升","lunch":"去皮鸡胸肉（可青椒/洋葱快炒）","density":0.30,"minimum":110,"snack":"纯牛奶250毫升 + 核桃2个","snack_main":8.0,"snack_protein":"纯牛奶250毫升","dinner":"清蒸鱼180克（可淋少量花椒油）","dinner_main":39.6,"carb":"rice","extra":" + 香蕉1根"},
+        {"name":"番茄牛肉搭配","breakfast":"无糖高蛋白酸奶250克 + 干燕麦40克 + 鸡蛋1个","breakfast_main":29.0,"breakfast_protein":"无糖高蛋白酸奶250克、鸡蛋1个","lunch":"番茄炖瘦牛肉","density":0.26,"minimum":130,"snack":"鸡蛋1个 + 苹果1个","snack_main":6.5,"snack_protein":"鸡蛋1个","dinner":"白灼虾200克 + 蒜泥醋汁","dinner_main":44.0,"carb":"sweet_potato","extra":" + 纯牛奶250毫升"},
+        {"name":"快手鸡胸搭配","breakfast":"鸡蛋3个 + 纯牛奶250毫升 + 全麦面包80克","breakfast_main":27.5,"breakfast_protein":"鸡蛋3个、纯牛奶250毫升","lunch":"即食鸡胸150克 + 生菜","density":0.30,"minimum":100,"snack":"无糖高蛋白酸奶200克","snack_main":17.0,"snack_protein":"无糖高蛋白酸奶200克","dinner":"煎三文鱼160克","dinner_main":35.2,"carb":"mixed","extra":" + 香蕉1根"},
+        {"name":"周末牛肉搭配","breakfast":"鸡蛋2个 + 无糖豆浆300毫升 + 蒸南瓜200克","breakfast_main":22.0,"breakfast_protein":"鸡蛋2个、无糖豆浆300毫升","lunch":"卤牛肉（少油）150克","density":0.26,"minimum":130,"snack":"纯牛奶250毫升 + 橙子1个","snack_main":8.0,"snack_protein":"纯牛奶250毫升","dinner":"烤鸡腿去皮180克","dinner_main":45.0,"carb":"rice_corn","extra":" + 香蕉1根"},
+        {"name":"清淡鱼虾搭配","breakfast":"无糖高蛋白酸奶250克 + 干燕麦40克 + 猕猴桃1个","breakfast_main":22.0,"breakfast_protein":"无糖高蛋白酸奶250克","lunch":"清蒸鱼（鲈鱼/鳜鱼）180克","density":0.22,"minimum":160,"snack":"鸡蛋2个 + 小番茄1份","snack_main":13.0,"snack_protein":"鸡蛋2个","dinner":"熟虾仁200克 + 醋汁","dinner_main":44.0,"carb":"noodle_potato","extra":" + 纯牛奶250毫升"},
+        {"name":"豆腐鸡蛋搭配","breakfast":"鸡蛋3个 + 纯牛奶250毫升 + 蒸红薯200克","breakfast_main":27.5,"breakfast_protein":"鸡蛋3个、纯牛奶250毫升","lunch":"北豆腐300克（可少量辣椒炒）","density":0.10,"minimum":300,"snack":"无糖高蛋白酸奶200克 + 蓝莓1份","snack_main":17.0,"snack_protein":"无糖高蛋白酸奶200克","dinner":"熟鸡胸150克","dinner_main":45.0,"carb":"mixed_potato","extra":" + 香蕉1根"},
+        {"name":"猪里脊虾仁搭配","breakfast":"鸡蛋2个 + 无糖豆浆300毫升 + 全麦面包80克 + 苹果1个","breakfast_main":22.0,"breakfast_protein":"鸡蛋2个、无糖豆浆300毫升","lunch":"熟瘦猪里脊","density":0.25,"minimum":130,"snack":"纯牛奶250毫升 + 猕猴桃1个","snack_main":8.0,"snack_protein":"纯牛奶250毫升","dinner":"熟虾仁200克","dinner_main":44.0,"carb":"rice_pumpkin","extra":" + 香蕉1根"},
+        {"name":"鸡腿牛肉搭配","breakfast":"无糖高蛋白酸奶250克 + 干燕麦50克 + 香蕉1根","breakfast_main":22.0,"breakfast_protein":"无糖高蛋白酸奶250克","lunch":"去皮熟鸡腿肉","density":0.25,"minimum":130,"snack":"鸡蛋2个 + 橙子1个","snack_main":13.0,"snack_protein":"鸡蛋2个","dinner":"熟瘦牛肉170克","dinner_main":44.2,"carb":"rice","extra":" + 纯牛奶250毫升"},
     ]
     carbs = {
         "rice":{"lunch":{"恢复/休息日":"熟米饭150克","轻松训练日":"熟米饭200克","质量训练日":"熟米饭250克"},"dinner":{"恢复/休息日":"熟米饭120克","轻松训练日":"熟米饭150克","质量训练日":"熟米饭250克"}},
@@ -488,14 +858,17 @@ def _nutrition_plan(body_result: dict[str, Any], nutrition: list[dict[str, Any]]
         adjustment = "减重速度可能偏快：今天比原计划加回约100–200千卡，优先放在蛋白质和训练前后碳水。"; adjustment_reasons.append(body_result["rolling_weight_signal"])
     elif trend_sufficient and rolling_change > 0.2 and logged_days >= 3:
         adjustment = "多日均值持续上升：未来7天只下调一个变量，每天减少约100–150千卡，不同时增加高强度训练。"; adjustment_reasons.extend([body_result["rolling_weight_signal"], f"饮食记录已覆盖{logged_days}天，可进行小幅、可复盘的调整。"])
-    elif trend_sufficient and rolling_change > -0.1 and logged_days >= 5:
+    elif trend_sufficient and rolling_change > -0.15 and logged_days >= 5:
         adjustment = "多日均值接近平台：未来7天每天减少约100–150千卡，其他训练安排保持不变。"; adjustment_reasons.append(body_result["rolling_weight_signal"])
     elif trend_sufficient and -0.5 <= rolling_change <= -0.15:
         adjustment = "当前多日减重速度处于可接受范围，继续现有热量和训练安排，不追着单日数字调整。"; adjustment_reasons.append(body_result["rolling_weight_signal"])
-    elif trend_sufficient and rolling_change >= -0.1 and logged_days < 3:
+    elif trend_sufficient and rolling_change >= -0.15 and logged_days < 3:
         adjustment = "先把饮食连续记录提高到至少3–5天，再决定减热量还是增加低强度活动。"; adjustment_reasons.append("体重趋势需要与实际饮食记录交叉验证，当前记录覆盖不足。")
     else:
-        adjustment = "先执行温和热量缺口并连续观察7天；数据不足时不做激进调整。"; adjustment_reasons.append(body_result.get("rolling_weight_signal", "体重趋势数据不足。"))
+        if trend_sufficient:
+            adjustment = "体重多日趋势在可接受区间，保持现有热量和训练安排，继续观察7天。"; adjustment_reasons.append(body_result["rolling_weight_signal"])
+        else:
+            adjustment = "先执行温和热量缺口并连续观察7天；数据不足时不做激进调整。"; adjustment_reasons.append(body_result.get("rolling_weight_signal", "体重趋势数据不足。"))
 
     if workout.get("intensity") == "节奏": carb_mode, planned_training_kcal = "质量训练日", 200
     elif workout.get("intensity") == "低强度耐力": carb_mode, planned_training_kcal = "轻松训练日", 75
@@ -529,6 +902,12 @@ def _nutrition_plan(body_result: dict[str, Any], nutrition: list[dict[str, Any]]
     menu_plan = _rotating_daily_menu(today=today, protein_low=protein_low, protein_target=protein_target, carb_mode=menu_carb_mode)
     today_food_goal = menu_plan["today_food_goal"]
     daily_menu = menu_plan["daily_menu"]
+    if menu_carb_mode == "质量训练日":
+        carb_target_today = f"{hard_carb_low}–{hard_carb_high}克/天" if hard_carb_low else "需体重数据"
+        carb_target_today_label = "质量训练日碳水"
+    else:
+        carb_target_today = f"{easy_carb_low}–{easy_carb_high}克/天" if easy_carb_low else "需体重数据"
+        carb_target_today_label = "今日碳水" if menu_carb_mode == "轻松训练日" else "休息日碳水"
     today_actions: list[str] = []
     if severe_sleep: today_actions.append(f"昨夜睡眠级别为{sleep_context.get('severity')}，今天取消高强度，按恢复/休息日份量吃")
     elif today_easy: today_actions.append("今天按轻松/恢复日安排主食，保持蛋白质，不用为减脂完全戒碳水")
@@ -543,6 +922,7 @@ def _nutrition_plan(body_result: dict[str, Any], nutrition: list[dict[str, Any]]
         "protein_target": protein_target, "protein_explanation": protein_plain, "protein_distribution": "分3–4餐完成，每餐约25–40克蛋白质；睡眠差或休息日也不应大幅削减蛋白质。",
         "protein_portions": ["鸡蛋1个：约6–7克蛋白质；3个约19–20克。", "熟鸡胸肉100克：约30克蛋白质；熟瘦牛肉100克：约25–27克。", "熟鱼虾100克：约20–24克蛋白质。", "纯牛奶250毫升：约8克蛋白质；无糖高蛋白酸奶200克通常约15–20克。", "北豆腐200克：约16–24克蛋白质。"],
         "carb_target_easy": f"{easy_carb_low}–{easy_carb_high}克/天" if easy_carb_low else "需体重数据", "carb_target_hard": f"{hard_carb_low}–{hard_carb_high}克/天" if hard_carb_low else "需体重数据",
+        "carb_target_today": carb_target_today, "carb_target_today_label": carb_target_today_label,
         "carb_explanation": "碳水随当天训练和恢复变化：睡眠严重不足或休息日减少训练型加餐，但不因单日体重上升完全戒主食；质量课和长骑日前后增加。",
         "today": "；".join(today_actions), "today_food_goal": today_food_goal, "sample_day_total": f"{energy_target}；蛋白质{protein_target}", "daily_menu": daily_menu,
         "menu_date": menu_plan["menu_date"], "menu_variant": menu_plan["menu_variant"], "menu_mode": menu_plan["menu_mode"], "main_food_protein_g": menu_plan["main_food_protein_g"],
@@ -657,61 +1037,31 @@ def build_summary(
 
     if severe_sleep:
         readiness = "恢复不足"
-        intensity = "恢复"
-        workout_title = "补觉优先：完全休息或轻松散步"
-        duration = "0–30分钟"
-        workout_steps = [
-            "首选完全休息并补足睡眠，不用训练补偿进度。",
-            "若白天精神尚可，仅做10–30分钟轻松散步或舒缓活动，RPE 1–2分。",
-            "取消间歇、节奏、长距离和大重量力量训练；不要用咖啡因硬顶高强度。",
-        ]
-        rationale = "昨夜睡眠严重不足时，训练、饮食和恢复必须一起降级：保留正常三餐与蛋白质，缩小热量缺口，把恢复放在首位。"
     elif ordinary_sleep_debt:
         readiness = "恢复不足"
-        intensity = "低强度耐力"
-        workout_title = "低强度耐力 + 技术练习"
-        duration = "30–60分钟"
-        workout_steps = [
-            "热身10分钟，RPE 2–3分。",
-            "主训练20–40分钟，RPE 3–4分，全程能完整说句子，不追速度或爬坡输出。",
-            "冷身5–10分钟；若困倦、腿沉或心率异常，提前结束并休息。",
-        ]
-        rationale = "睡眠不足但未到极端程度，今天只保留低强度活动，避免高强度继续放大恢复压力。"
     elif high_load or elevated_resting or high_stress or (days_since is not None and days_since < 2 and load_ratio is not None and load_ratio >= 1.1):
         readiness = "一般"
-        intensity = "恢复"
-        workout_title = "恢复骑、轻松散步或完全休息"
-        duration = "0–45分钟"
-        workout_steps = [
-            "任选20–45分钟非常轻松活动，RPE 2分，全程可自然交谈。",
-            "避免爬坡发力、冲刺、节奏段和大重量力量训练。",
-            "若精神疲惫、静息心率仍偏高或双腿沉重，直接休息。",
-        ]
-        rationale = "训练负荷、静息心率或压力信号提示恢复需求，今天不继续叠加刺激。"
     else:
         readiness = "可训练"
-        intensity = "节奏"
-        workout_title = "有氧节奏能力"
-        duration = "50–70分钟"
-        workout_steps = [
-            "热身15分钟，最后加入3×30秒高踏频，组间轻松60秒。",
-            "主训练3×8分钟，RPE 6分、呼吸加深但可说短句，组间轻松4分钟。",
-            "随后10–20分钟轻松耐力活动并冷身；若第二组已无法稳定完成，取消第三组。",
-        ]
-        rationale = "当前睡眠、近期负荷和恢复代理指标未触发降级，可安排一次受控的中等偏上有氧刺激。"
 
-    workout = {
-        "title": workout_title,
-        "intensity": intensity,
-        "duration": duration,
-        "readiness": readiness,
-        "steps": workout_steps,
-        "rationale": rationale,
-        "stop_rule": "出现胸痛、异常气短、眩晕、心悸或明显不适应立即停止；持续异常应寻求医疗评估。",
-    }
+    local_tz = now.astimezone().tzinfo
+    weekday = now.astimezone(local_tz).weekday()
+    recent_sport_types = [item.get("sport_type") for item in recent if item.get("sport_type")]
+    workout = _build_workout(
+        readiness=readiness,
+        sleep_severity=sleep_context["severity"],
+        weekday=weekday,
+        profile=profile,
+        recent_sport_types=recent_sport_types,
+    )
+    intensity = workout["intensity"]
+    workout_title = workout["title"]
+    duration = workout["duration"]
+    workout_steps = workout["steps"]
+    rationale = workout["rationale"]
     known_signals = low_recovery_reasons or ["睡眠、训练负荷、最低心率和压力数据未触发必须降级的规则"]
     decision_explanation = [
-        "数据：" + "；".join(known_signals) + "。",
+        "数据：" + "；".join(s.rstrip("。") for s in known_signals) + "。",
         f"判断：今日准备状态为{readiness}，因此训练定为{intensity}。",
         f"安排：{workout_title}，{duration}。",
         "联动：训练强度决定今天的碳水安排；睡眠和恢复状态决定热量缺口；体重只按多日趋势调整。",
