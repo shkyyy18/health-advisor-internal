@@ -125,6 +125,11 @@ CREATE TABLE IF NOT EXISTS nutrition_logs (
     raw_json TEXT,
     UNIQUE(eaten_at, source)
 );
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    source TEXT PRIMARY KEY,
+    synced_at TEXT NOT NULL
+);
 """
 
 
@@ -308,6 +313,25 @@ def list_nutrition(limit: int = 30) -> list[dict[str, Any]]:
             "SELECT * FROM nutrition_logs ORDER BY eaten_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def record_sync(source: str) -> None:
+    """Stamp the moment a data source finished syncing, for the dashboard snapshot time."""
+    with connect() as db:
+        db.execute(
+            """
+            INSERT INTO sync_state (source, synced_at) VALUES (?, ?)
+            ON CONFLICT(source) DO UPDATE SET synced_at=excluded.synced_at
+            """,
+            (source, utc_now()),
+        )
+
+
+def latest_sync_time() -> str | None:
+    """Return the most recent sync timestamp across sources, or None if never synced."""
+    with connect() as db:
+        row = db.execute("SELECT MAX(synced_at) AS latest FROM sync_state").fetchone()
+    return row["latest"] if row else None
 
 
 def save_photo_nutrition(eaten_at: str, meal_type: str, analysis: dict[str, Any], totals: dict[str, float | None]) -> None:

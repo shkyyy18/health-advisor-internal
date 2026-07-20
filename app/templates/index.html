@@ -22,6 +22,7 @@
         <button class="btn btn-secondary" onclick="syncHealth(event)" data-url="/api/sync/xiaomi">刷新健康数据</button>
         {% if connected %}<button class="btn btn-secondary" onclick="syncStrava(event)" data-url="/api/sync/strava">同步 Strava</button>{% else %}<a class="btn btn-secondary" href="/connect/strava">连接 Strava</a>{% endif %}
       </div>
+      <div class="status-bar">快照时间：{{ snapshot_time }}</div>
       <div id="sync-status" class="status-bar"></div>
     </div>
   </header>
