@@ -3,6 +3,20 @@
 (function () {
   const data = window.__DASHBOARD_DATA || {};
 
+  // LAN access token: when the page was opened with ?token=... (phone over LAN),
+  // append it to every API call and internal link so the LAN guard lets them through.
+  const lanToken = new URLSearchParams(location.search).get('token');
+  function withToken(url) {
+    if (!lanToken) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}token=${encodeURIComponent(lanToken)}`;
+  }
+  if (lanToken) {
+    document.querySelectorAll('a[href^="/"]').forEach((link) => {
+      link.href = withToken(link.getAttribute('href'));
+    });
+  }
+
   // Set default meal time to now, floored to minutes.
   const mealTimeInput = document.getElementById('meal-time');
   if (mealTimeInput) {
@@ -160,7 +174,7 @@
     };
 
     try {
-      const response = await fetch('/api/meals/quick', {
+      const response = await fetch(withToken('/api/meals/quick'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -184,7 +198,7 @@
     button.textContent = runningText;
     statusBox.textContent = '正在读取最新数据…';
     try {
-      const response = await fetch(url, { method: 'POST' });
+      const response = await fetch(withToken(url), { method: 'POST' });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || `请求失败（${response.status}）`);
       statusBox.textContent = '刷新成功，正在重新生成建议…';
@@ -248,7 +262,7 @@
     if (resultBox) resultBox.style.display = 'none';
 
     try {
-      const response = await fetch('/api/meals/analyze', {
+      const response = await fetch(withToken('/api/meals/analyze'), {
         method: 'POST',
         body: new FormData(form),
       });
@@ -342,7 +356,7 @@
 
   // Heartbeat: keeps the backend alive while this tab is open. The backend
   // shuts itself down a few minutes after the last heartbeat (tab closed).
-  const beat = () => fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+  const beat = () => fetch(withToken('/api/heartbeat'), { method: 'POST' }).catch(() => {});
   beat();
   setInterval(beat, 30 * 1000);
 })();

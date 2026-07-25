@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +39,31 @@ def _int_from_env(name: str, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
 
 
+def _load_lan_token() -> str:
+    """局域网访问令牌：HEALTH_LAN_TOKEN 优先；否则生成随机令牌并持久化到
+    data/lan_token.txt（data/ 已在 .gitignore 中，令牌不进 git），保证重启后
+    手机书签里的令牌仍然有效。"""
+    env_token = os.getenv("HEALTH_LAN_TOKEN", "").strip()
+    if env_token:
+        return env_token
+    token_path = _path_from_env(
+        "HEALTH_LAN_TOKEN_PATH", PROJECT_ROOT / "data" / "lan_token.txt"
+    )
+    try:
+        existing = token_path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except OSError:
+        pass
+    token = secrets.token_urlsafe(24)
+    try:
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token + "\n", encoding="utf-8")
+    except OSError:
+        pass  # 写不进也能用本次生成的令牌，只是重启后会变
+    return token
+
+
 _load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -55,6 +81,7 @@ class Settings:
     mobile_access_password: str
     openai_api_key: str
     openai_vision_model: str
+    lan_token: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -83,6 +110,7 @@ class Settings:
             mobile_access_password=os.getenv("MOBILE_ACCESS_PASSWORD", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+            lan_token=_load_lan_token(),
         )
 
 

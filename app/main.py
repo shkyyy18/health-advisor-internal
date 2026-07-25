@@ -43,6 +43,13 @@ from app.strava import (
 
 _IDLE_TIMEOUT_SECONDS = int(os.getenv("HEALTH_IDLE_TIMEOUT_SECONDS", "300"))
 _last_heartbeat = time.monotonic()
+# 进行中的同步请求数。夜间小米云慢时单次同步可超过 300s 闲置阈值，
+# 看门狗必须跳过这些时段，否则会把正在同步的服务强杀（os._exit）。
+_active_syncs = 0
+
+# 回环来源免令牌（本地脚本：daily_sync.py、open_dashboard.py、计划任务）；
+# "testclient" 是 Starlette TestClient 的对端标识，测试视同本机。
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
 async def _idle_watchdog() -> None:
@@ -50,11 +57,14 @@ async def _idle_watchdog() -> None:
 
     看板页面打开时每 30 秒 POST 一次 /api/heartbeat；用户关闭标签页后，
     超过 HEALTH_IDLE_TIMEOUT_SECONDS（默认 300 秒）没有心跳就自动退出，
-    配合"后端不常驻"模式。每日同步任务一两分钟内结束并自行停止服务，
-    不受本看门狗影响。
+    配合"后端不常驻"模式。每日同步任务一两分钟内结束并自行停止服务；
+    同步请求执行期间（_active_syncs > 0）看门狗暂停计时，避免夜间小米云
+    响应慢、同步超过闲置阈值时被误杀。
     """
     while True:
         await asyncio.sleep(30)
+        if _active_syncs:
+            continue
         if time.monotonic() - _last_heartbeat > _IDLE_TIMEOUT_SECONDS:
             logger.info("No dashboard heartbeat for over %ss; shutting down.", _IDLE_TIMEOUT_SECONDS)
             os._exit(0)
@@ -64,6 +74,10 @@ async def _idle_watchdog() -> None:
 async def lifespan(_: FastAPI):
     init_db()
     watchdog = asyncio.create_task(_idle_watchdog())
+    logger.info(
+        "LAN access enabled. Phone dashboard URL: http://<本机局域网IP>:8000/?token=%s",
+        settings.lan_token,
+    )
     yield
     watchdog.cancel()
 
@@ -99,6 +113,29 @@ async def protect_public_tunnel(request: Request, call_next):
             return JSONResponse({"detail": "需要手机访问密码"}, status_code=401, headers={"WWW-Authenticate": 'Basic realm="Health Assistant"'})
         return await call_next(request)
     return JSONResponse({"detail": "Not found"}, status_code=404)
+
+
+@app.middleware("http")
+async def lan_token_guard(request: Request, call_next):
+    """服务绑定 0.0.0.0 后，非回环来源（手机等局域网设备）必须携带有效令牌。
+
+    令牌可用 ?token=… 查询参数（手机浏览器最方便）或 X-LAN-Token 头；
+    回环请求（daily_sync.py、open_dashboard.py 等本地脚本）一律免令牌。
+    """
+    client_host = request.client.host if request.client else ""
+    if client_host in _LOOPBACK_HOSTS:
+        return await call_next(request)
+    # 静态资源只是界面文件（CSS/JS/图标），不含健康数据，放行以保证
+    # 手机端页面能正常加载样式与脚本；页面与 API 仍全部要求令牌。
+    if request.url.path.startswith("/static/"):
+        return await call_next(request)
+    token = request.query_params.get("token") or request.headers.get("x-lan-token", "")
+    if settings.lan_token and hmac.compare_digest(token, settings.lan_token):
+        return await call_next(request)
+    return JSONResponse(
+        {"detail": "局域网访问需要有效令牌：URL 加 ?token=… 或发送 X-LAN-Token 头"},
+        status_code=403,
+    )
 
 
 class BodyMeasurement(BaseModel):
@@ -359,14 +396,25 @@ def receive_strava_webhook(
     return {"status": "accepted"}
 
 
+_xiaomi_sync_lock = asyncio.Lock()
+
+
 @app.post("/api/sync/xiaomi")
 async def sync_xiaomi():
+    # 客户端超时重试时，上一轮同步可能仍在服务端执行；加锁串行化，
+    # 避免两个同步任务并发抓取小米云/写 SQLite（upsert 幂等，重复执行无害）。
+    global _active_syncs
+    _active_syncs += 1
     try:
-        result = await sync_mi_fitness()
-    except XiaomiSyncError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    record_sync("xiaomi")
-    return result
+        async with _xiaomi_sync_lock:
+            try:
+                result = await sync_mi_fitness()
+            except XiaomiSyncError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            record_sync("xiaomi")
+            return result
+    finally:
+        _active_syncs -= 1
 
 
 # Compatibility for the previous dashboard button. The old directory importer is gone;
@@ -378,14 +426,19 @@ async def sync_legacy_compat():
 
 @app.post("/api/sync/strava")
 async def sync_strava():
+    global _active_syncs
+    _active_syncs += 1
     try:
-        count = await sync_activities()
-    except (RuntimeError, StravaConfigurationError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
-    record_sync("strava")
-    return {"synced": count}
+        try:
+            count = await sync_activities()
+        except (RuntimeError, StravaConfigurationError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
+        record_sync("strava")
+        return {"synced": count}
+    finally:
+        _active_syncs -= 1
 
 
 @app.get("/api/activities")

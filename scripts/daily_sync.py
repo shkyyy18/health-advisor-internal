@@ -24,7 +24,12 @@ BASE_DIR = Path(__file__).absolute().parent.parent
 LOG_PATH = BASE_DIR / "logs" / "daily_sync.log"
 PORT = 8000
 BASE_URL = f"http://127.0.0.1:{PORT}"
-SYNC_TIMEOUT_SECONDS = 180
+# 夜间（约 21:40）小米云响应明显变慢，180s 内服务端同步尚未完成，
+# 客户端超时误报失败，随后 stop_service 还会把仍在同步的服务杀掉
+# （2026-07-23 起连续多晚实录，早上同样数据量 40s 内完成）。放宽到 600s：
+# 覆盖服务端 connect 3 次重试 + 采集重试的常见最坏情况，同时给 strava
+# 同步和启动预留余量，整轮仍低于计划任务 15 分钟 ExecutionTimeLimit。
+SYNC_TIMEOUT_SECONDS = 600
 
 
 def log(message: str) -> None:
@@ -87,17 +92,37 @@ def stop_service() -> None:
     log(f"本次同步临时启动的服务已停止（PID {pid}）。")
 
 
-def post_sync(path: str) -> tuple[bool, str]:
+def post_sync(path: str) -> tuple[bool, str, bool]:
+    """返回 (是否成功, 详情, 是否可重试)。
+
+    HTTP 错误（如小米鉴权失败返回 400）重试无意义，不重试；
+    网络/超时类错误（TimeoutError、URLError）可重试——服务端同步是幂等
+    upsert，且服务端已加锁串行化，客户端超时后重试安全。
+    """
     request = urllib.request.Request(f"{BASE_URL}{path}", method="POST")
     try:
         with urllib.request.urlopen(request, timeout=SYNC_TIMEOUT_SECONDS) as response:
             body = response.read().decode("utf-8", errors="replace")
-            return True, body
+            return True, body, False
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
-        return False, f"HTTP {exc.code}: {detail}"
+        return False, f"HTTP {exc.code}: {detail}", False
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        return False, f"{type(exc).__name__}: {exc}"
+        return False, f"{type(exc).__name__}: {exc}", True
+
+
+RETRY_DELAYS_SECONDS = (30, 60)  # 网络类失败的指数退避：最多重试 2 次
+
+
+def post_sync_with_retry(name: str, path: str) -> tuple[bool, str]:
+    for attempt, delay in enumerate([0, *RETRY_DELAYS_SECONDS]):
+        if delay:
+            log(f"{name} 同步为网络类失败，{delay} 秒后进行第 {attempt + 1} 次重试…")
+            time.sleep(delay)
+        ok, detail, retriable = post_sync(path)
+        if ok or not retriable:
+            return ok, detail
+    return ok, detail
 
 
 def main() -> int:
@@ -109,7 +134,9 @@ def main() -> int:
 
     failed = False
     for name, path in (("xiaomi", "/api/sync/xiaomi"), ("strava", "/api/sync/strava")):
-        ok, detail = post_sync(path)
+        # 2026-07-23 起连续多晚 21:40 场 xiaomi 同步 TimeoutError（strava 正常）：
+        # 网络类失败按指数退避正式重试（30s、60s），HTTP/鉴权类错误不重试。
+        ok, detail = post_sync_with_retry(name, path)
         if ok:
             try:
                 detail = json.dumps(json.loads(detail), ensure_ascii=False)

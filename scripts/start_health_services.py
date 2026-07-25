@@ -71,7 +71,7 @@ def launch(command: list[str], stdout_name: str, stderr_name: str) -> None:
 def main() -> None:
     if not port_open(8000):
         launch(
-            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"],
             "app.out.log",
             "app.err.log",
         )

@@ -94,25 +94,42 @@ _TRANSIENT_ERROR_MARKERS = (
     "WriteTimeout",
     "PoolTimeout",
     "TimeoutException",
+    "TimeoutError",
+    "timed out",
     "NetworkError",
     "ReadError",
     "RemoteProtocolError",
     "SSLError",
 )
 
+# 鉴权类错误：重试无意义，直接提示重新扫码。
+_AUTH_ERROR_MARKERS = ("401", "Unauthorized", "passToken", "登录")
+
+
+def _is_transient_error(detail: str) -> bool:
+    return any(marker in detail for marker in _TRANSIENT_ERROR_MARKERS)
+
+
+def _is_auth_error(detail: str) -> bool:
+    return any(marker in detail for marker in _AUTH_ERROR_MARKERS)
+
 
 async def _connect_with_retry(adapter: Any) -> bool:
+    """连接失败按指数退避重试（3s、6s）；鉴权类错误重试无意义，直接放弃。"""
     for attempt in range(CONNECT_ATTEMPTS):
         if await adapter.connect():
             return True
+        detail = str(getattr(adapter, "last_error", "") or "")
+        if detail and not _is_transient_error(detail):
+            return False
         if attempt < CONNECT_ATTEMPTS - 1:
-            await asyncio.sleep(CONNECT_RETRY_SECONDS)
+            await asyncio.sleep(CONNECT_RETRY_SECONDS * (2 ** attempt))
     return False
 
 
 def _connect_error(adapter: Any) -> XiaomiSyncError:
     detail = str(getattr(adapter, "last_error", "") or "").strip() or "未知原因"
-    if any(marker in detail for marker in _TRANSIENT_ERROR_MARKERS):
+    if _is_transient_error(detail):
         return XiaomiSyncError(
             f"小米云暂时连接失败（{detail}）。这是网络或小米服务器波动，"
             "不是登录过期，无需重新扫码，稍后点刷新或等下一次自动同步即可。"
@@ -123,13 +140,14 @@ def _connect_error(adapter: Any) -> XiaomiSyncError:
 async def _collect_all(
     adapter: Any, start_text: str, end_text: str
 ) -> tuple[list[Any], list[Any], list[Any], list[Any], list[Any], list[Any]]:
-    """Fetch every data type; retry the whole pass once on transient failures.
+    """Fetch every data type; retry with exponential backoff on transient failures.
 
-    小米云偶发在采集中途返回空原因的错误（2026-07-20 实录："Mi Fitness
-    request failed: "），整轮重试一次通常即可成功。
+    小米云偶发在采集中途失败（2026-07-20 实录空原因的 "Mi Fitness request failed: "；
+    2026-07-23 起连续多晚 TimeoutError）。除鉴权类错误（重试无意义，直接提示
+    重新扫码）外，失败一律整轮重试最多 2 次（3s、6s 指数退避）。
     """
     last_exc: Exception | None = None
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             daily = await _collect(adapter.iter_daily_activity(start_text, end_text))
             sleep = await _collect(adapter.iter_sleep_sessions(start_text, end_text))
@@ -140,9 +158,20 @@ async def _collect_all(
             return daily, sleep, body, heart, spo2, stress
         except Exception as exc:
             last_exc = exc
-            if attempt == 0:
-                await asyncio.sleep(CONNECT_RETRY_SECONDS)
-    raise XiaomiSyncError(f"小米健康数据同步失败：{last_exc}") from last_exc
+            detail = f"{type(exc).__name__}: {exc}"
+            if _is_auth_error(detail):
+                raise XiaomiSyncError(
+                    f"小米健康数据同步失败（{detail}），passToken 可能已过期，请重新扫码登录。"
+                ) from exc
+            if attempt < 2:
+                await asyncio.sleep(CONNECT_RETRY_SECONDS * (2 ** attempt))
+    detail = f"{type(last_exc).__name__}: {last_exc}"
+    if _is_transient_error(detail):
+        raise XiaomiSyncError(
+            f"小米健康数据同步失败（{detail}）。网络或小米服务器波动，"
+            "已指数退避重试仍失败，无需重新扫码，等下一次同步即可。"
+        ) from last_exc
+    raise XiaomiSyncError(f"小米健康数据同步失败：{detail}") from last_exc
 
 
 async def sync_mi_fitness(

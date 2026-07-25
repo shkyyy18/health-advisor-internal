@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import json
@@ -191,7 +191,8 @@ def test_non_transient_connect_failure_suggests_relogin(monkeypatch, tmp_path):
 
     message, attempts = _run_connect_failure(monkeypatch, tmp_path, AuthFailingAdapter)
     assert "passToken 可能已过期" in message
-    assert attempts == 3
+    # 鉴权类错误重试无意义，首次失败即放弃，不再重试。
+    assert attempts == 1
 
 
 def test_heartbeat_endpoint_keeps_service_alive():

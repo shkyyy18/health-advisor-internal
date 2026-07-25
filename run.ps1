@@ -9,6 +9,6 @@ if (-not (Test-Path -LiteralPath '.env')) {
     exit 1
 }
 
-$argsList = @('app.main:app', '--host', '127.0.0.1', '--port', '8000')
+$argsList = @('app.main:app', '--host', '0.0.0.0', '--port', '8000')
 if ($Reload) { $argsList += '--reload' }
 python -m uvicorn @argsList
