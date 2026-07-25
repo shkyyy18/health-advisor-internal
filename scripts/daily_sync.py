@@ -3,7 +3,8 @@
 
 Syncs Strava activities and Xiaomi Mi Fitness data (sleep, body composition,
 daily metrics) by calling the local service endpoints, so the service stays
-the single SQLite writer. Starts the service first if it is not running.
+the single SQLite writer. Starts the service first if it is not running, and
+stops it again after the sync so nothing stays resident.
 
 Logs to logs/daily_sync.log. Exit code 1 when any source fails, so the
 Windows scheduled task result reflects the failure.
@@ -39,9 +40,10 @@ def port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
-def ensure_service() -> bool:
+def ensure_service() -> str | None:
+    """Return 'running' if already up, 'started' if we launched it, None on failure."""
     if port_open(PORT):
-        return True
+        return "running"
     log("服务未运行，先启动健康助手服务。")
     subprocess.Popen(
         [sys.executable, "-m", "scripts.start_health_services"],
@@ -52,9 +54,37 @@ def ensure_service() -> bool:
     deadline = time.time() + 30
     while time.time() < deadline:
         if port_open(PORT):
-            return True
+            return "started"
         time.sleep(1)
-    return False
+    return None
+
+
+def listening_pid(port: int) -> int | None:
+    output = subprocess.run(
+        ["netstat", "-ano"], capture_output=True, text=True, encoding="utf-8", errors="replace"
+    ).stdout
+    for line in output.splitlines():
+        parts = line.split()
+        if (
+            len(parts) >= 5
+            and parts[0] == "TCP"
+            and parts[1].endswith(f":{port}")
+            and parts[3] == "LISTENING"
+        ):
+            try:
+                return int(parts[4])
+            except ValueError:
+                return None
+    return None
+
+
+def stop_service() -> None:
+    pid = listening_pid(PORT)
+    if pid is None:
+        return
+    # /T 连带杀掉 multiprocessing 子进程（spawn_main），避免端口残留占用。
+    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    log(f"本次同步临时启动的服务已停止（PID {pid}）。")
 
 
 def post_sync(path: str) -> tuple[bool, str]:
@@ -72,7 +102,8 @@ def post_sync(path: str) -> tuple[bool, str]:
 
 def main() -> int:
     log("开始每日同步。")
-    if not ensure_service():
+    service_state = ensure_service()
+    if service_state is None:
         log("失败：健康助手服务在 30 秒内未就绪，放弃本次同步。")
         return 1
 
@@ -90,6 +121,8 @@ def main() -> int:
             log(f"{name} 同步失败：{detail}")
 
     log("每日同步结束。" if not failed else "每日同步结束（有失败项）。")
+    if service_state == "started":
+        stop_service()
     return 1 if failed else 0
 
 

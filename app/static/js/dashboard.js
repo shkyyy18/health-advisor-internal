@@ -339,4 +339,10 @@
 
   renderCharts();
   checkTodayMeals();
+
+  // Heartbeat: keeps the backend alive while this tab is open. The backend
+  // shuts itself down a few minutes after the last heartbeat (tab closed).
+  const beat = () => fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+  beat();
+  setInterval(beat, 30 * 1000);
 })();

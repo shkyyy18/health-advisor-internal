@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
 import hmac
 import logging
+import os
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from urllib.parse import urlparse
@@ -24,8 +27,9 @@ from app.meal_analysis import (
 )
 from app.config import PROJECT_ROOT, settings
 from app.db import (
-    connect, init_db, list_activities, list_body, list_daily_metrics, list_nutrition,
-    list_sleep, load_health_snapshot, save_photo_nutrition, save_quick_nutrition,
+    connect, init_db, latest_sync_time, list_activities, list_body, list_daily_metrics,
+    list_nutrition, list_sleep, load_health_snapshot, record_sync,
+    save_photo_nutrition, save_quick_nutrition,
 )
 from app.xiaomi_sync import XiaomiSyncError, sync_mi_fitness
 from app.strava import (
@@ -37,10 +41,31 @@ from app.strava import (
 )
 
 
+_IDLE_TIMEOUT_SECONDS = int(os.getenv("HEALTH_IDLE_TIMEOUT_SECONDS", "300"))
+_last_heartbeat = time.monotonic()
+
+
+async def _idle_watchdog() -> None:
+    """Stop the service once no dashboard page has checked in for a while.
+
+    看板页面打开时每 30 秒 POST 一次 /api/heartbeat；用户关闭标签页后，
+    超过 HEALTH_IDLE_TIMEOUT_SECONDS（默认 300 秒）没有心跳就自动退出，
+    配合"后端不常驻"模式。每日同步任务一两分钟内结束并自行停止服务，
+    不受本看门狗影响。
+    """
+    while True:
+        await asyncio.sleep(30)
+        if time.monotonic() - _last_heartbeat > _IDLE_TIMEOUT_SECONDS:
+            logger.info("No dashboard heartbeat for over %ss; shutting down.", _IDLE_TIMEOUT_SECONDS)
+            os._exit(0)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    watchdog = asyncio.create_task(_idle_watchdog())
     yield
+    watchdog.cancel()
 
 
 app = FastAPI(title="数据驱动减脂健康顾问", version="0.2.0", lifespan=lifespan)
@@ -124,6 +149,7 @@ class StravaWebhookEvent(BaseModel):
 async def _handle_strava_webhook(event: dict[str, object]) -> None:
     try:
         result = await process_webhook_event(event)
+        record_sync("strava")
         logger.info("Strava webhook handled: %s", result)
     except Exception:
         # The callback must acknowledge quickly; failures can be repaired by manual sync.
@@ -134,6 +160,16 @@ def _state_signature(nonce: str) -> str:
     return hmac.new(
         settings.app_secret.encode(), nonce.encode(), hashlib.sha256
     ).hexdigest()
+
+
+def _snapshot_time() -> str:
+    """最近一次数据同步的本地时间；从未记录过同步时退化为数据库文件的修改时间。"""
+    latest = latest_sync_time()
+    if latest:
+        moment = datetime.fromisoformat(latest).astimezone()
+    else:
+        moment = datetime.fromtimestamp(settings.database_path.stat().st_mtime).astimezone()
+    return moment.strftime("%Y/%m/%d %H:%M:%S")
 
 
 def _current_health_data() -> tuple[dict, dict]:
@@ -168,6 +204,7 @@ def dashboard(request: Request):
             "activities": snapshot["activities"][:10],
             "summary": summary,
             "dashboard_data": _build_dashboard_data(),
+            "snapshot_time": _snapshot_time(),
         },
     )
 
@@ -182,6 +219,7 @@ def mobile_dashboard(request: Request):
             "summary": summary,
             "openai_ready": bool(settings.openai_api_key),
             "vision_model": settings.openai_vision_model,
+            "snapshot_time": _snapshot_time(),
         },
     )
 
@@ -264,6 +302,14 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/api/heartbeat")
+def heartbeat():
+    """看板页面的保活心跳；时间戳供闲置看门狗判断用户是否还在看。"""
+    global _last_heartbeat
+    _last_heartbeat = time.monotonic()
+    return {"ok": True}
+
+
 @app.get("/connect/strava")
 def connect_strava():
     nonce = secrets.token_urlsafe(24)
@@ -289,6 +335,7 @@ async def strava_callback(code: str, state: str, error: str | None = None):
         await sync_activities()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
+    record_sync("strava")
     return RedirectResponse("/", status_code=303)
 
 
@@ -315,9 +362,11 @@ def receive_strava_webhook(
 @app.post("/api/sync/xiaomi")
 async def sync_xiaomi():
     try:
-        return await sync_mi_fitness()
+        result = await sync_mi_fitness()
     except XiaomiSyncError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record_sync("xiaomi")
+    return result
 
 
 # Compatibility for the previous dashboard button. The old directory importer is gone;
@@ -335,6 +384,7 @@ async def sync_strava():
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="无法连接 Strava，请稍后重试。") from exc
+    record_sync("strava")
     return {"synced": count}
 
 

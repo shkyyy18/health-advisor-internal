@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections import defaultdict
@@ -81,6 +82,69 @@ def _sleep_stage_minutes(stages: list[Any]) -> dict[str, int]:
     return totals
 
 
+CONNECT_ATTEMPTS = 3
+CONNECT_RETRY_SECONDS = 3
+
+# adapter.connect() 把登录鉴权失败和网络波动都吞成 False，具体原因留在
+# adapter.last_error。网络类错误不应提示用户重新扫码。
+_TRANSIENT_ERROR_MARKERS = (
+    "ConnectError",
+    "ConnectTimeout",
+    "ReadTimeout",
+    "WriteTimeout",
+    "PoolTimeout",
+    "TimeoutException",
+    "NetworkError",
+    "ReadError",
+    "RemoteProtocolError",
+    "SSLError",
+)
+
+
+async def _connect_with_retry(adapter: Any) -> bool:
+    for attempt in range(CONNECT_ATTEMPTS):
+        if await adapter.connect():
+            return True
+        if attempt < CONNECT_ATTEMPTS - 1:
+            await asyncio.sleep(CONNECT_RETRY_SECONDS)
+    return False
+
+
+def _connect_error(adapter: Any) -> XiaomiSyncError:
+    detail = str(getattr(adapter, "last_error", "") or "").strip() or "未知原因"
+    if any(marker in detail for marker in _TRANSIENT_ERROR_MARKERS):
+        return XiaomiSyncError(
+            f"小米云暂时连接失败（{detail}）。这是网络或小米服务器波动，"
+            "不是登录过期，无需重新扫码，稍后点刷新或等下一次自动同步即可。"
+        )
+    return XiaomiSyncError(f"小米云连接失败（{detail}），passToken 可能已过期，请重新扫码登录。")
+
+
+async def _collect_all(
+    adapter: Any, start_text: str, end_text: str
+) -> tuple[list[Any], list[Any], list[Any], list[Any], list[Any], list[Any]]:
+    """Fetch every data type; retry the whole pass once on transient failures.
+
+    小米云偶发在采集中途返回空原因的错误（2026-07-20 实录："Mi Fitness
+    request failed: "），整轮重试一次通常即可成功。
+    """
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            daily = await _collect(adapter.iter_daily_activity(start_text, end_text))
+            sleep = await _collect(adapter.iter_sleep_sessions(start_text, end_text))
+            body = await _collect(adapter.iter_body_measurements(start_text, end_text))
+            heart = await _collect(adapter.iter_heart_rate(start_text, end_text))
+            spo2 = await _collect(adapter.iter_spo2(start_text, end_text))
+            stress = await _collect(adapter.iter_stress(start_text, end_text))
+            return daily, sleep, body, heart, spo2, stress
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                await asyncio.sleep(CONNECT_RETRY_SECONDS)
+    raise XiaomiSyncError(f"小米健康数据同步失败：{last_exc}") from last_exc
+
+
 async def sync_mi_fitness(
     *,
     days: int | None = None,
@@ -97,14 +161,9 @@ async def sync_mi_fitness(
     factory = adapter_factory or _adapter_class()
     adapter = factory(user_id=user_id, pass_token=pass_token, region="cn")
     try:
-        if not await adapter.connect():
-            raise XiaomiSyncError("小米云连接失败，passToken 可能已过期，请重新扫码登录。")
-        daily = await _collect(adapter.iter_daily_activity(start_text, end_text))
-        sleep = await _collect(adapter.iter_sleep_sessions(start_text, end_text))
-        body = await _collect(adapter.iter_body_measurements(start_text, end_text))
-        heart = await _collect(adapter.iter_heart_rate(start_text, end_text))
-        spo2 = await _collect(adapter.iter_spo2(start_text, end_text))
-        stress = await _collect(adapter.iter_stress(start_text, end_text))
+        if not await _connect_with_retry(adapter):
+            raise _connect_error(adapter)
+        daily, sleep, body, heart, spo2, stress = await _collect_all(adapter, start_text, end_text)
     except XiaomiSyncError:
         raise
     except Exception as exc:

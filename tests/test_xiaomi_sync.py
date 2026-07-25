@@ -144,3 +144,57 @@ def test_invalid_sync_days_falls_back_to_default(monkeypatch):
 def test_sync_days_is_clamped(monkeypatch):
     monkeypatch.setenv("MI_FITNESS_SYNC_DAYS", "999")
     assert _int_from_env("MI_FITNESS_SYNC_DAYS", 14, 1, 90) == 90
+
+
+class FailingAdapter:
+    last_error = "ConnectError: connection refused"
+    attempts = 0
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+    async def connect(self):
+        type(self).attempts += 1
+        return False
+
+    async def close(self):
+        pass
+
+
+def _run_connect_failure(monkeypatch, tmp_path, adapter_cls):
+    from app import xiaomi_sync
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(xiaomi_sync.asyncio, "sleep", no_sleep)
+    adapter_cls.attempts = 0
+    auth = tmp_path / "auth.json"
+    auth.write_text(json.dumps({"userId": "user", "passToken": "token"}), encoding="utf-8")
+    try:
+        asyncio.run(sync_mi_fitness(days=1, credentials_path=auth, adapter_factory=adapter_cls))
+    except XiaomiSyncError as exc:
+        return str(exc), adapter_cls.attempts
+    raise AssertionError("expected XiaomiSyncError")
+
+
+def test_transient_connect_failure_retries_and_does_not_blame_pass_token(monkeypatch, tmp_path):
+    message, attempts = _run_connect_failure(monkeypatch, tmp_path, FailingAdapter)
+    assert "无需重新扫码" in message
+    assert "passToken 可能已过期" not in message
+    assert attempts == 3
+
+
+def test_non_transient_connect_failure_suggests_relogin(monkeypatch, tmp_path):
+    class AuthFailingAdapter(FailingAdapter):
+        last_error = "KeyError: 'passToken'"
+
+    message, attempts = _run_connect_failure(monkeypatch, tmp_path, AuthFailingAdapter)
+    assert "passToken 可能已过期" in message
+    assert attempts == 3
+
+
+def test_heartbeat_endpoint_keeps_service_alive():
+    response = TestClient(main.app).post("/api/heartbeat")
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
