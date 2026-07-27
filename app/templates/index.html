@@ -375,6 +375,52 @@
       </div>
     </section>
 
+    <!-- Personal patterns mined from the user's own data -->
+    {% if summary.personal_patterns and (summary.personal_patterns.findings or summary.personal_patterns.weekly_experiment) %}
+    <section class="card" style="margin-top: 20px;">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">你的规律（来自你自己的数据）</h2>
+          <p class="card-subtitle">{{ summary.personal_patterns.data_note }}</p>
+        </div>
+      </div>
+      {% if summary.personal_patterns.headline %}
+      <div style="background: var(--info-bg); color: var(--info); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; margin-bottom: 16px;">
+        <strong>{{ summary.personal_patterns.headline }}</strong>
+      </div>
+      {% endif %}
+      {% if summary.personal_patterns.findings %}
+      <ul class="gap-list">
+        {% for f in summary.personal_patterns.findings %}
+        <li><strong>{{ f.topic }}：</strong>{{ f.finding }} <span style="color: var(--ink-muted);">（样本 {{ f.n }} · {{ f.confidence }} · {{ f.caveat }}）</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if summary.personal_patterns.custom_targets %}
+      <h3 style="font-size: 14px; margin: 16px 0 8px;">为你定制的目标（专家建议 × 你的数据）</h3>
+      <ul style="padding-left: 18px; font-size: 13px; color: var(--ink-secondary); line-height: 1.8;">
+        {% for t in summary.personal_patterns.custom_targets %}
+        <li><strong>{{ t.area }}：</strong>{{ t.target }}<br>
+          <span style="color: var(--ink-muted);">你的数据：{{ t.your_data }} ｜ 专家基准：{{ t.expert_baseline }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if summary.personal_patterns.weekly_experiment %}
+      {% set exp = summary.personal_patterns.weekly_experiment %}
+      <div style="margin-top: 16px; border: 1px solid var(--info); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;">
+        <strong>{{ exp.title }}</strong>
+        <ul style="padding-left: 18px; margin-top: 8px; line-height: 1.8; color: var(--ink-secondary);">
+          <li><strong>变量：</strong>{{ exp.variable }}</li>
+          <li><strong>保持不变：</strong>{{ exp.keep_constant }}</li>
+          <li><strong>测量：</strong>{{ exp.measure }}</li>
+          <li><strong>判据：</strong>{{ exp.success }}</li>
+          <li><strong>你需要做的：</strong>{% for p in exp.your_part %}{{ p }}{% if not loop.last %}；{% endif %}{% endfor %}</li>
+        </ul>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
     <!-- Recent activities -->
     <section class="card" style="margin-top: 20px;">
       <div class="card-header">

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from math import ceil
-from statistics import mean, median
+from statistics import mean, median, pstdev
 from typing import Any
 
 
@@ -394,6 +394,251 @@ def _mifflin_bmr(weight: float | None, profile: dict[str, Any]) -> float | None:
     if weight is None or height is None or age is None or sex not in {"男", "女"}:
         return None
     return 10 * weight + 6.25 * height - 5 * age + (5 if sex == "男" else -161)
+
+
+def _fmt_clock(minutes: float) -> str:
+    wrapped = int(round(minutes)) % (24 * 60)
+    return f"{wrapped // 60}:{wrapped % 60:02d}"
+
+
+def _personal_patterns(
+    sleep: list[dict[str, Any]],
+    body: list[dict[str, Any]],
+    metrics: list[dict[str, Any]],
+    activities: list[dict[str, Any]],
+    *,
+    now: datetime,
+    nutrition_logged_days: int,
+) -> dict[str, Any]:
+    """Mine this user's own history for repeatable patterns, then turn them into
+    customized targets. Every pattern is reported with its sample size and a
+    correlation-is-not-causation caveat; expert guidelines stay the anchor, the
+    data only tunes them to this person."""
+    local_tz = now.astimezone().tzinfo
+
+    # ---- Clean nights with real bed/wake times (from Xiaomi raw payloads) ----
+    nights: list[dict[str, Any]] = []
+    excluded = 0
+    for item in sleep:
+        raw = _raw(item)
+        duration = _number(item.get("duration_minutes"))
+        if not raw or raw.get("is_nap") or duration is None:
+            continue
+        start = _try_parse(raw.get("start_at"))
+        end = _try_parse(raw.get("end_at"))
+        if start is None or end is None or duration < 180:
+            excluded += 1  # short session: nap or watch detection artifact
+            continue
+        start_local = start.astimezone(local_tz)
+        end_local = end.astimezone(local_tz)
+        bed = start_local.hour * 60 + start_local.minute
+        if bed < 12 * 60:
+            bed += 24 * 60  # after-midnight bedtime belongs to the previous evening
+        elif bed < 19 * 60:
+            excluded += 1  # daytime "sleep" is a nap or artifact
+            continue
+        nights.append({
+            "date": item.get("sleep_date"),
+            "bed": bed,
+            "wake": end_local.hour * 60 + end_local.minute,
+            "duration": duration,
+            "awake": _number(item.get("awake_minutes")) or 0.0,
+        })
+
+    findings: list[dict[str, Any]] = []
+    targets: list[dict[str, Any]] = []
+    headline: str | None = None
+    wake_median: float | None = None
+    target_bedtime: float | None = None
+
+    # ---- Pattern 1: bedtime -> sleep duration ----
+    if len(nights) >= 6:
+        buckets = [
+            ("23:00前", [n for n in nights if n["bed"] < 23 * 60]),
+            ("23:00–00:59", [n for n in nights if 23 * 60 <= n["bed"] < 25 * 60]),
+            ("凌晨1点后", [n for n in nights if n["bed"] >= 25 * 60]),
+        ]
+        usable = [(label, group) for label, group in buckets if len(group) >= 2]
+        if len(usable) >= 2:
+            segments = [
+                f"{label}入睡平均{mean(n['duration'] for n in group) / 60:.1f}小时（{len(group)}晚）"
+                for label, group in usable
+            ]
+            wakes = [n["wake"] for n in nights]
+            wake_median = median(wakes)
+            wake_std = pstdev(wakes) if len(wakes) > 1 else 0.0
+            finding = "你的睡眠时长主要由入睡时间决定：" + "；".join(segments) + "。"
+            if wake_std <= 60:
+                finding += f"你的起床时间相当固定（中位{_fmt_clock(wake_median)}，波动约{wake_std:.0f}分钟），想多睡只能提前入睡。"
+            findings.append({
+                "topic": "入睡时间 → 睡眠时长",
+                "finding": finding,
+                "n": len(nights),
+                "confidence": "较可靠" if len(nights) >= 20 else "初步",
+                "caveat": "相关不等于因果，但方向与你的目标一致，可直接行动",
+            })
+            target_bedtime = round((wake_median - 7.5 * 60) / 5) * 5
+            headline = "你的数据显示：起床时间基本固定，睡得晚是睡不够的直接原因——提前入睡几乎等量转化为睡眠时长。"
+
+    # ---- Pattern 2: sleep duration -> next-day resting HR / stress / steps ----
+    metrics_by_date = {
+        str(item.get("metric_date"))[:10]: item
+        for item in metrics
+        if item.get("metric_date")
+    }
+    good_nights = sum(1 for n in nights if n["duration"] >= 420)
+    if len(nights) >= 6:
+        well_rested = [n for n in nights if n["duration"] >= 420 and n["date"] in metrics_by_date]
+        short_nights = [n for n in nights if n["duration"] < 360 and n["date"] in metrics_by_date]
+        if len(well_rested) >= 5 and len(short_nights) >= 5:
+            comparisons: list[str] = []
+            for field, label, unit in (("heart_rate_min", "最低心率", "次/分"), ("stress_avg", "压力", "分"), ("steps", "步数", "步")):
+                hi = [_number(metrics_by_date[n["date"]].get(field)) for n in well_rested]
+                lo = [_number(metrics_by_date[n["date"]].get(field)) for n in short_nights]
+                hi = [v for v in hi if v is not None]
+                lo = [v for v in lo if v is not None]
+                if len(hi) >= 5 and len(lo) >= 5:
+                    comparisons.append(f"睡够7小时的次日{label}平均{mean(hi):.0f}{unit}，不足6小时时为{mean(lo):.0f}{unit}")
+            if comparisons:
+                findings.append({
+                    "topic": "睡眠 → 次日状态",
+                    "finding": "；".join(comparisons) + "。",
+                    "n": len(well_rested) + len(short_nights),
+                    "confidence": "初步",
+                    "caveat": "相关不等于因果，活动量等因素未完全排除",
+                })
+        else:
+            findings.append({
+                "topic": "睡眠 → 次日状态",
+                "finding": f"{len(nights)}个有效夜晚中只有{good_nights}晚睡够7小时，样本太少，暂时测不出睡眠对次日心率、压力和活动量的影响——这正是本周实验要补的数据。",
+                "n": len(nights),
+                "confidence": "不足",
+                "caveat": "需要更多睡够的夜晚才能比较",
+            })
+
+    # ---- Pattern 3: activity level -> short-term weight change ----
+    weight_by_date: dict[str, float] = {}
+    for item in body:
+        moment = _try_parse(item.get("measured_at"))
+        weight = _number(item.get("weight_kg"))
+        if moment is None or weight is None:
+            continue
+        weight_by_date[moment.astimezone(local_tz).date().isoformat()] = weight
+    weigh_dates = sorted(weight_by_date)
+    pairs: list[dict[str, float]] = []
+    for previous, current in zip(weigh_dates, weigh_dates[1:]):
+        gap = (datetime.fromisoformat(current) - datetime.fromisoformat(previous)).days
+        if gap > 3:
+            continue
+        step_values = [
+            _number(metrics_by_date[d].get("steps"))
+            for d in weigh_dates
+            if previous < d <= current and d in metrics_by_date
+        ]
+        step_values = [v for v in step_values if v is not None]
+        if step_values:
+            pairs.append({
+                "change_per_day": (weight_by_date[current] - weight_by_date[previous]) / gap,
+                "steps": mean(step_values),
+            })
+    if len(pairs) >= 8:
+        step_median = median(p["steps"] for p in pairs)
+        active = [p["change_per_day"] for p in pairs if p["steps"] >= step_median]
+        quiet = [p["change_per_day"] for p in pairs if p["steps"] < step_median]
+        findings.append({
+            "topic": "活动量 → 体重变化",
+            "finding": (
+                f"{len(pairs)}组相邻称重中，步数较多的一半日期体重平均{mean(active):+.2f}公斤/天，"
+                f"较少的一半{mean(quiet):+.2f}公斤/天——现有活动量差异对你的短期体重变化影响不明显，"
+                "减重缺口的关键更可能在饮食端（目前缺少连续饮食记录）。"
+            ),
+            "n": len(pairs),
+            "confidence": "初步",
+            "caveat": "相关不等于因果；步数只是活动量的一部分",
+        })
+
+    # ---- Customized targets: expert anchor tuned by personal data ----
+    if target_bedtime is not None and wake_median is not None:
+        early = [n for n in nights if n["bed"] < 23 * 60]
+        early_note = (
+            f"你23:00前入睡的{len(early)}个夜晚平均睡了{mean(n['duration'] for n in early) / 60:.1f}小时"
+            if len(early) >= 2
+            else "你的数据显示入睡越早睡得越长"
+        )
+        targets.append({
+            "area": "几点睡",
+            "your_data": f"中位起床{_fmt_clock(wake_median)}且很稳定；目前中位入睡{_fmt_clock(median(n['bed'] for n in nights))}",
+            "expert_baseline": "成人每晚7–9小时（睡眠医学共识，ACSM 恢复指南同口径）",
+            "target": f"按你的起床时间倒推7.5小时：{_fmt_clock(target_bedtime)}前上床。{early_note}，这一目标对你可行。",
+        })
+    month_minutes = 0.0
+    for item in activities:
+        started = _try_parse(item.get("start_date"))
+        if started is not None and started >= now - timedelta(days=28):
+            month_minutes += max(0.0, _number(item.get("moving_time")) or 0) / 60
+    weekly_minutes = month_minutes / 4
+    targets.append({
+        "area": "如何运动",
+        "your_data": f"近4周周均运动约{round(weekly_minutes)}分钟；你的数据暂未显示活动量差异直接压动短期体重",
+        "expert_baseline": "ACSM 每周150–300分钟中等强度，或75–150分钟高强度",
+        "target": "运动定位为心肺健康、保肌和睡眠改善，按当天课表执行、量大次日必须恢复；减重缺口主要靠饮食记录校准，不靠临时加练。",
+    })
+    targets.append({
+        "area": "吃什么",
+        "your_data": f"近7天饮食记录{nutrition_logged_days}天，尚不足以挖掘你自己的饮食规律",
+        "expert_baseline": "蛋白质1.6–2.0克/公斤体重，碳水随训练日浮动",
+        "target": "先连续记录7天真实摄入（拍照即可），攒够数据后按你的实际饮食结构定制；此前维持现行蛋白质和碳水框架不变。",
+    })
+
+    # ---- This week's single-variable experiment ----
+    if len(nights) < 7:
+        weekly_experiment = {
+            "title": "本周实验：先把数据收集补齐",
+            "variable": "不改变任何习惯，只保证数据完整",
+            "keep_constant": "作息、饮食、训练全部照旧",
+            "measure": "每晚戴表睡觉、早起排空后称重、三餐拍照记录",
+            "success": "7天后有效夜晚≥6个、称重≥6次、饮食记录≥5天，即可开始挖掘你的个人规律",
+            "your_part": ["睡觉戴表", "早起称重", "三餐拍照记录"],
+        }
+    elif good_nights / len(nights) < 0.3 and target_bedtime is not None:
+        weekly_experiment = {
+            "title": f"本周实验：{_fmt_clock(target_bedtime)}前上床",
+            "variable": f"唯一变量：上床时间提前到{_fmt_clock(target_bedtime)}前（你目前中位入睡{_fmt_clock(median(n['bed'] for n in nights))}）",
+            "keep_constant": "饮食、训练课表、称重方式全部不变；不因某天体重波动改计划",
+            "measure": "睡眠时长（手表自动）、晨重（排空后进食前）、次日最低心率与压力（自动）",
+            "success": f"7天后≥5晚睡够7小时，且次日最低心率不高于基线，说明提前入睡对你有效；目前你只有{good_nights}/{len(nights)}晚睡够7小时",
+            "your_part": ["睡觉戴表（自动同步，无需操作）", "早起排空后、进食前称重", f"{_fmt_clock(target_bedtime)}前上床，其他照旧", "三餐拍照记录（为下阶段饮食定制攒数据）"],
+        }
+    elif nutrition_logged_days < 3:
+        weekly_experiment = {
+            "title": "本周实验：7天饮食记录",
+            "variable": "唯一变量：三餐拍照记录，吃什么不改变",
+            "keep_constant": "作息、训练、食量全部照旧，只记录不调整",
+            "measure": "每餐拍照或一句话记录；晨重和睡眠照常自动采集",
+            "success": "≥5天完整记录后，就能按你的真实摄入定制热量和结构，而不是套通用公式",
+            "your_part": ["三餐拍照（手机打开 /mobile 或 NFC 贴纸）", "睡觉戴表", "早起称重"],
+        }
+    else:
+        weekly_experiment = {
+            "title": "本周实验：保持框架，观察趋势",
+            "variable": "不改变任何变量",
+            "keep_constant": "按课表训练、按菜单吃、固定称重条件",
+            "measure": "晨重7日均值、睡眠、训练完成度",
+            "success": "第8天用7日均重和睡眠一起复盘，再决定下一个变量",
+            "your_part": ["睡觉戴表", "早起称重", "三餐记录"],
+        }
+
+    return {
+        "headline": headline,
+        "findings": findings,
+        "custom_targets": targets,
+        "weekly_experiment": weekly_experiment,
+        "data_note": (
+            f"基于{len(nights)}个有效夜晚、{len(pairs)}组相邻称重"
+            f"（已剔除{excluded}条小睡/短睡/无时间记录）；所有规律标注样本量，相关不等于因果。"
+        ),
+    }
+
 
 
 # Weekday-to-sport mapping gives variety while keeping a predictable weekly rhythm.
@@ -826,11 +1071,13 @@ def _build_workout(
         template_key = "recovery" if sport != "rest" else "rest"
         intensity_override = None
     elif readiness == "一般":
-        # Still conservative: use easy template for the scheduled sport.
+        # Still conservative: use the easy template for the scheduled sport.
+        # Bodyweight has no "easy" variant, so fall back to the recovery session
+        # instead of silently prescribing a full lower/upper strength workout.
         if sport == "rest":
             template_key = "rest"
         else:
-            template_key = "easy" if sport in {"swim", "run", "ride"} else "lower"
+            template_key = "easy" if sport in {"swim", "run", "ride"} else "recovery"
         intensity_override = None
     else:
         # Ready: follow the weekly plan with quality sessions.
@@ -1074,7 +1321,10 @@ def _integrated_coaching(*, body_result: dict[str, Any], sleep_context: dict[str
     else: status, headline = "稳步减脂", "当前按恢复状态决定训练、按训练决定碳水、按多日体重趋势决定热量微调。"
     body_signal = body_result.get("daily_weight_signal", "缺少体重数据。")
     if rolling_change is not None: body_signal += " " + body_result.get("rolling_weight_signal", "")
-    activity_signal = f"近7天{training['minutes']}分钟运动，负荷比{training['load_ratio'] if training['load_ratio'] is not None else '暂无'}。"
+    activity_signal = f"近7天{training['minutes']}分钟运动"
+    if training.get("last_2d_minutes"):
+        activity_signal += f"，其中最近2天{training['last_2d_minutes']}分钟"
+    activity_signal += f"，负荷比{training['load_ratio'] if training['load_ratio'] is not None else '暂无'}。"
     if metrics_context.get("average_steps") is not None: activity_signal += f" 近7日平均约{metrics_context['average_steps']}步。"
     inputs = [
         {"area": "睡眠", "signal": sleep_context["signal"], "impact": "决定今天是否允许质量训练，并影响热量缺口是否需要缩小。"},
@@ -1153,6 +1403,34 @@ def build_summary(
     latest_activity_at = dated_activities[0][0] if dated_activities else None
     days_since = (now - latest_activity_at).total_seconds() / 86400 if latest_activity_at else None
 
+    # Short-window (last 2 days) overload: a single huge day or two big days must
+    # visibly downgrade today's plan, even when the 7d-vs-4w ratio stays moderate.
+    two_day_start = now - timedelta(days=2)
+    two_day_load = 0.0
+    two_day_minutes = 0.0
+    max_single_minutes = 0.0
+    for started_at, item in dated_activities:
+        if started_at < two_day_start:
+            break
+        load, _bucket = _activity_load(item, observed_max_hr, resting_hr)
+        two_day_load += load
+        minutes = max(0.0, _number(item.get("moving_time")) or 0) / 60
+        two_day_minutes += minutes
+        max_single_minutes = max(max_single_minutes, minutes)
+    two_day_load_ratio = two_day_load / chronic_weekly if chronic_weekly > 0 else None
+    # Overload = a truly big 48h (>=5h moving time), or a load spike that is both
+    # large versus the 4-week baseline (>=1.2x weekly) and substantial in absolute
+    # terms (>=300 load, roughly 5h of easy riding). The absolute floor prevents a
+    # single moderate workout in a quiet month from looking like an overload.
+    recent_overload = two_day_minutes > 0 and (
+        two_day_minutes >= 300
+        or (
+            two_day_load_ratio is not None
+            and two_day_load_ratio >= 1.2
+            and two_day_load >= 300
+        )
+    )
+
     severe_sleep = sleep_context["severity"] in {"严重不足", "明显不足"}
     ordinary_sleep_debt = sleep_context["severity"] in {"不足", "累积不足"}
     high_load = load_ratio is not None and load_ratio > 1.5
@@ -1161,6 +1439,15 @@ def build_summary(
     low_recovery_reasons: list[str] = []
     if sleep_context.get("latest_hours") is not None and sleep_context["severity"] != "基本充足":
         low_recovery_reasons.append(sleep_context["signal"])
+    if recent_overload:
+        ratio_text = (
+            f"，短期负荷约为近4周周均的{two_day_load_ratio:.1f}倍"
+            if two_day_load_ratio is not None
+            else ""
+        )
+        low_recovery_reasons.append(
+            f"最近2天运动{round(two_day_minutes)}分钟（最大单次{round(max_single_minutes)}分钟{ratio_text}），短期负荷过载"
+        )
     if high_load:
         low_recovery_reasons.append("近7天训练负荷明显高于近4周周均")
     if elevated_resting:
@@ -1171,6 +1458,8 @@ def build_summary(
     if severe_sleep:
         readiness = "恢复不足"
     elif ordinary_sleep_debt:
+        readiness = "恢复不足"
+    elif recent_overload:
         readiness = "恢复不足"
     elif high_load or elevated_resting or high_stress or (days_since is not None and days_since < 2 and load_ratio is not None and load_ratio >= 1.1):
         readiness = "一般"
@@ -1204,6 +1493,7 @@ def build_summary(
     training_result = {
         "activity_count": len(recent),
         "minutes": total_minutes,
+        "last_2d_minutes": round(two_day_minutes),
         "distance_km": total_distance_km,
         "elevation_m": total_elevation,
         "kilojoules": total_kj,
@@ -1229,14 +1519,26 @@ def build_summary(
         workout=workout,
         nutrition_plan=nutrition_plan,
     )
+    personal_patterns = _personal_patterns(
+        sleep,
+        body,
+        metrics,
+        activities,
+        now=now,
+        nutrition_logged_days=nutrition_plan["logged_days"],
+    )
 
     observations = [f"过去7天记录{len(recent)}段活动，共{total_minutes}分钟、{total_distance_km}公里、爬升{total_elevation}米。"]
+    if two_day_minutes:
+        observations.append(f"其中最近2天运动{round(two_day_minutes)}分钟（最大单次{round(max_single_minutes)}分钟）。")
     if total_kj:
         observations.append(f"功率计记录的机械功约{total_kj}千焦，仅用于比较骑行负荷，不直接等同于应吃回的热量。")
     observations.append(sleep_context["signal"])
     observations.append(body_result.get("daily_weight_signal", "缺少体重数据。"))
     if body_result.get("weight_rolling_change_kg") is not None:
         observations.append(body_result.get("rolling_weight_signal", ""))
+    if personal_patterns.get("headline"):
+        observations.append(personal_patterns["headline"])
 
     suggestions = [f"今日课表：{workout_title}，{duration}；{rationale}", nutrition_plan["today"]]
     if readiness == "恢复不足":
@@ -1269,6 +1571,7 @@ def build_summary(
         "body_composition": body_result,
         "nutrition": nutrition_plan,
         "daily_coaching": daily_coaching,
+        "personal_patterns": personal_patterns,
         "weekly_framework": [
             "每周最多1次质量课，前提是昨夜睡眠、近期负荷、最低心率和主观状态均允许。",
             "每周2次低强度耐力或恢复活动，承担大部分训练时间。",

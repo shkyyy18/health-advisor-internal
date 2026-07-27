@@ -271,7 +271,7 @@ def list_sleep(limit: int = 30) -> list[dict[str, Any]]:
         rows = db.execute(
             """
             SELECT sleep_date, source, duration_minutes, deep_minutes, light_minutes,
-                   rem_minutes, awake_minutes, average_hr, average_spo2
+                   rem_minutes, awake_minutes, average_hr, average_spo2, raw_json
             FROM sleep_summaries
             ORDER BY sleep_date DESC LIMIT ?
             """,
@@ -399,7 +399,7 @@ def load_health_snapshot(activity_limit: int = 500, other_limit: int = 30) -> di
         sleep_rows = db.execute(
             """
             SELECT sleep_date, source, duration_minutes, deep_minutes, light_minutes,
-                   rem_minutes, awake_minutes, average_hr, average_spo2
+                   rem_minutes, awake_minutes, average_hr, average_spo2, raw_json
             FROM sleep_summaries
             ORDER BY sleep_date DESC LIMIT ?
             """,
