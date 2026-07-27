@@ -408,3 +408,41 @@ def test_personal_patterns_ignores_naps_and_short_artifacts():
     result = build_summary([], sleep, [], now=now)
     assert result["personal_patterns"]["findings"] == []
     assert "剔除" in result["personal_patterns"]["data_note"]
+
+
+def test_stage_goal_tracks_progress_and_eta_to_normal_range():
+    body = [
+        {"measured_at": "2026-07-07T08:00:00+08:00", "weight_kg": 74.15, "body_fat_pct": 27.4},
+        {"measured_at": "2026-07-06T08:00:00+08:00", "weight_kg": 73.6, "body_fat_pct": 27.3},
+        {"measured_at": "2026-01-23T08:00:00+08:00", "weight_kg": 76.0, "body_fat_pct": 28.0},
+    ]
+    profile = {
+        "sex": "男", "age": 38, "height_cm": 173,
+        "target_body_fat_low": 20, "target_body_fat_high": 24,
+    }
+    result = build_summary([], [], body, profile=profile)
+    goal = result["body_composition"]["stage_goal"]
+
+    # lean = 74.15 * 0.726 = 53.8; stage-1 weight = 53.8 / 0.76 = 70.8
+    assert goal["current_weight_kg"] == 74.2
+    assert goal["current_body_fat_pct"] == 27.4
+    assert goal["start_weight_kg"] == 76.0
+    assert goal["stage1_weight_kg"] == 70.8
+    assert goal["final_weight_range_kg"] == "67.3–70.8"
+    assert goal["remaining_kg"] == 3.3
+    # journey = 76.0 - 70.8 = 5.2; progress = (5.2 - 3.3) / 5.2 = 36%
+    assert goal["progress_pct"] == 36
+    assert goal["eta_weeks"] == "9–17周"
+
+
+def test_stage_goal_marks_completed_when_in_normal_range():
+    body = [
+        {"measured_at": "2026-07-07T08:00:00+08:00", "weight_kg": 70.0, "body_fat_pct": 22.0},
+    ]
+    profile = {"sex": "男", "age": 38, "height_cm": 173}
+    result = build_summary([], [], body, profile=profile)
+    goal = result["body_composition"]["stage_goal"]
+
+    assert goal["remaining_kg"] == 0.0
+    assert goal["progress_pct"] == 100
+    assert goal["eta_weeks"] == "已达标"

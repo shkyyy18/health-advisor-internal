@@ -95,6 +95,28 @@
       </div>
     </section>
 
+    <!-- North-star goal: body fat & weight back to normal range -->
+    {% if summary.body_composition.stage_goal %}
+    {% set goal = summary.body_composition.stage_goal %}
+    <section class="card" style="margin-top: 20px;">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">阶段目标：体脂与体重回归正常</h2>
+          <p class="card-subtitle">{{ goal.pace_note }}</p>
+        </div>
+        <span class="coach-status">{{ goal.progress_pct }}%</span>
+      </div>
+      <div style="background: var(--info-bg); border-radius: var(--radius-sm); height: 8px; margin-bottom: 14px; overflow: hidden;">
+        <div style="background: var(--info); height: 100%; width: {{ goal.progress_pct }}%;"></div>
+      </div>
+      <div class="workout-meta" style="flex-wrap: wrap;">
+        <span class="coach-status">当前 {{ goal.current_weight_kg }}kg · 体脂{{ goal.current_body_fat_pct }}%</span>
+        <span class="coach-status">阶段一 ≤{{ goal.stage1_body_fat_pct }}% → 约{{ goal.stage1_weight_kg }}kg{% if goal.remaining_kg > 0 %}（再减{{ goal.remaining_kg }}kg，约{{ goal.eta_weeks }}）{% else %}（{{ goal.eta_weeks }}）{% endif %}</span>
+        <span class="coach-status">正常区间 {{ goal.final_body_fat_range }} → {{ goal.final_weight_range_kg }}kg</span>
+      </div>
+    </section>
+    {% endif %}
+
     <!-- Trend charts -->
     <section class="grid-3">
       <div class="card sparkline-card">

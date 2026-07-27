@@ -338,6 +338,35 @@ def _body_analysis(
             f"达到后根据功率、睡眠和饥饿感，再决定是否继续到{target_low:.0f}%–{target_high:.0f}%。"
         ),
     })
+
+    # North-star tracker: current -> stage-1 -> normal range, with progress and
+    # an ETA at the gentle pace (0.2-0.4 kg/week) this system is built around.
+    start_weight = None
+    for item in reversed(records):
+        earliest = _number(item.get("weight_kg"))
+        if earliest is not None:
+            start_weight = earliest
+            break
+    remaining = max(0.0, weight - target_weight_high)
+    journey = max(0.0, (start_weight if start_weight is not None else weight) - target_weight_high)
+    progress_pct = max(0, min(100, round((journey - remaining) / journey * 100))) if journey > 0 else 100
+    result["stage_goal"] = {
+        "current_weight_kg": round(weight, 1),
+        "current_body_fat_pct": round(body_fat, 1),
+        "start_weight_kg": round(start_weight, 1) if start_weight is not None else None,
+        "stage1_body_fat_pct": round(target_high),
+        "stage1_weight_kg": round(target_weight_high, 1),
+        "final_body_fat_range": f"{target_low:.0f}%–{target_high:.0f}%",
+        "final_weight_range_kg": f"{target_weight_low:.1f}–{target_weight_high:.1f}",
+        "remaining_kg": round(remaining, 1),
+        "progress_pct": progress_pct,
+        "eta_weeks": (
+            f"{ceil(remaining / 0.4)}–{ceil(remaining / 0.2)}周"
+            if remaining > 0
+            else "已达标"
+        ),
+        "pace_note": "按每周0.2–0.4公斤的温和速度估算，不追快；实际速度以7日均价趋势为准。",
+    }
     return result
 
 
