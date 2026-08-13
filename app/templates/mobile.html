@@ -80,12 +80,12 @@
 
   <section class="card">
     <h2>拍照记录饮食（可选）</h2>
-    {% if not openai_ready %}<p class="status error" style="display:block">尚未配置 OPENAI_API_KEY，目前仍可使用上面的手工记录。</p>{% endif %}
+    {% if not meal_llm_ready %}<p class="status error" style="display:block">尚未配置 MEAL_LLM_API_KEY（图片分析密钥），目前仍可使用上面的手工记录。</p>{% endif %}
     <form id="mealForm">
       <div><label for="mealType">这是哪一餐？</label><select id="mealType" name="meal_type"><option>早餐</option><option selected>午餐</option><option>晚餐</option><option>加餐</option><option>训练中补给</option></select></div>
       <div class="camera"><input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required><p class="muted">建议从正上方拍，让主食、肉、蔬菜和饮料都在画面中。</p></div>
       <img id="preview" class="preview" alt="餐食预览">
-      <button id="submit" class="button secondary" type="submit" {% if not openai_ready %}disabled{% endif %}>分析这餐并保存</button>
+      <button id="submit" class="button secondary" type="submit" {% if not meal_llm_ready %}disabled{% endif %}>分析这餐并保存</button>
       <div id="status" class="status" role="status" aria-live="polite"></div>
     </form>
   </section>

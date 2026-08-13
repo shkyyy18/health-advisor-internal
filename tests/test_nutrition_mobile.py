@@ -101,7 +101,7 @@ def test_meal_upload_uses_lunch_when_meal_type_is_omitted(monkeypatch):
     assert saved[0][1] == "午餐"
 
 
-def test_quick_manual_meal_endpoint_saves_without_openai():
+def test_quick_manual_meal_endpoint_saves_without_meal_llm():
     eaten_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     response = TestClient(main.app).post(
         "/api/meals/quick",
@@ -152,8 +152,8 @@ def test_mobile_dashboard_renders_daily_coach_and_rotating_menu():
 
     html = main.templates.env.get_template("mobile.html").render(
         summary=summary,
-        openai_ready=False,
-        vision_model="test-model",
+        meal_llm_ready=False,
+        meal_llm_model="test-model",
     )
 
     assert "今日联动教练" in html

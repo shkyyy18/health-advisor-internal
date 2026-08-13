@@ -21,4 +21,4 @@ Include a minimal reproduction with synthetic data only. Never send a real Xiaom
 
 ## If a secret was exposed
 
-Revoke or rotate the affected Strava/Xiaomi/OpenAI credentials, remove the file from the working tree, and rewrite Git history before publishing. Deleting only the latest copy does not remove a secret from prior commits.
+Revoke or rotate the affected Strava/Xiaomi/meal-analysis LLM credentials, remove the file from the working tree, and rewrite Git history before publishing. Deleting only the latest copy does not remove a secret from prior commits.

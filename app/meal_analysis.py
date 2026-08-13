@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import json
@@ -90,9 +90,9 @@ async def analyze_meal_photo(
     nutrition_context: dict[str, Any],
 ) -> dict[str, Any]:
     validate_meal_image(image, content_type)
-    if not settings.openai_api_key:
+    if not settings.meal_llm_api_key:
         raise MealAnalysisError(
-            "尚未配置OPENAI_API_KEY（OpenAI接口密钥），图片分析暂不可用。"
+            "尚未配置MEAL_LLM_API_KEY（图片分析接口密钥），图片分析暂不可用。"
         )
 
     encoded = base64.b64encode(image).decode("ascii")
@@ -101,7 +101,7 @@ async def analyze_meal_photo(
 只能根据可见食物估算；无法判断的油和调料写入uncertainty（不确定因素）。所有专业词或英文缩写首次出现时紧跟中文括号解释。份量使用个、碗、手掌、克、毫升。解释为什么改，关联热量缺口、蛋白质、训练恢复或饱腹感。热量和营养素给区间。只输出JSON（结构化文本），不要Markdown（排版标记）。
 JSON结构：{{"summary":"一句话说明构成","foods":[{{"name":"食物","portion":"估计份量","kcal_range":"200–260千卡","protein_g_range":"20–26克","carb_g_range":"10–20克","fat_g_range":"5–10克"}}],"meal_total":{{"kcal_range":"","protein_g_range":"","carb_g_range":"","fat_g_range":""}},"good_points":["具体优点"],"improvements":["明确到食物和份量的调整"],"science_reason":["调整及科学原因"],"next_meal":"下一餐具体吃什么及份量","uncertainty":["照片无法确认的内容"],"confidence":"低/中/高"}}"""
     payload = {
-        "model": settings.openai_vision_model,
+        "model": settings.meal_llm_model,
         "input": [
             {
                 "role": "user",
@@ -117,11 +117,13 @@ JSON结构：{{"summary":"一句话说明构成","foods":[{{"name":"食物","por
     }
     try:
         timeout = httpx.Timeout(90, connect=15)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        # 图片分析中转站直连可达；trust_env=False 避免 Windows 系统代理假死时
+        # httpx 被动跟随死代理导致请求被拒（2026-08-13 同步失败同一根因）。
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await client.post(
-                "https://api.openai.com/v1/responses",
+                settings.meal_llm_base_url,
                 headers={
-                    "Authorization": f"Bearer {settings.openai_api_key}",
+                    "Authorization": f"Bearer {settings.meal_llm_api_key}",
                     "Content-Type": "application/json",
                 },
                 json=payload,
@@ -129,7 +131,7 @@ JSON结构：{{"summary":"一句话说明构成","foods":[{{"name":"食物","por
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         raise MealAnalysisError(
-            f"OpenAI图片分析接口返回错误：{exc.response.text[:300]}"
+            f"图片分析接口返回错误：{exc.response.text[:300]}"
         ) from exc
     except httpx.HTTPError as exc:
         raise MealAnalysisError("连接图片分析服务失败，请检查网络后重试。") from exc

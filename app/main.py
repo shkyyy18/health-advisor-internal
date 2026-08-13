@@ -254,8 +254,8 @@ def mobile_dashboard(request: Request):
         name="mobile.html",
         context={
             "summary": summary,
-            "openai_ready": bool(settings.openai_api_key),
-            "vision_model": settings.openai_vision_model,
+            "meal_llm_ready": bool(settings.meal_llm_api_key),
+            "meal_llm_model": settings.meal_llm_model,
             "snapshot_time": _snapshot_time(),
         },
     )

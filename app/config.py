@@ -79,8 +79,9 @@ class Settings:
     mi_fitness_auth_path: Path
     mi_fitness_sync_days: int
     mobile_access_password: str
-    openai_api_key: str
-    openai_vision_model: str
+    meal_llm_api_key: str
+    meal_llm_base_url: str
+    meal_llm_model: str
     lan_token: str
 
     @classmethod
@@ -108,8 +109,11 @@ class Settings:
             ),
             mi_fitness_sync_days=_int_from_env("MI_FITNESS_SYNC_DAYS", 14, 1, 90),
             mobile_access_password=os.getenv("MOBILE_ACCESS_PASSWORD", ""),
-            openai_api_key=os.getenv("OPENAI_API_KEY", ""),
-            openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o-mini"),
+            meal_llm_api_key=os.getenv("MEAL_LLM_API_KEY", ""),
+            meal_llm_base_url=os.getenv(
+                "MEAL_LLM_BASE_URL", "https://cdk.goodmoonlight.com/responses"
+            ),
+            meal_llm_model=os.getenv("MEAL_LLM_MODEL", "gpt-5.6-sol"),
             lan_token=_load_lan_token(),
         )
 
