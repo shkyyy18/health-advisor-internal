@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import urlencode
 
@@ -12,6 +13,26 @@ from app.db import delete_activity, delete_token, get_token, save_activity, save
 AUTH_URL = "https://www.strava.com/oauth/authorize"
 TOKEN_URL = "https://www.strava.com/oauth/token"
 API_URL = "https://www.strava.com/api/v3"
+
+
+async def _run_with_client(
+    client_kwargs: dict[str, Any],
+    body: Callable[[httpx.AsyncClient], Awaitable[Any]],
+) -> Any:
+    """代理优先执行请求体；连接失败时以直连重建客户端重试一次。
+
+    背景：Windows 系统代理可能假死（代理进程退出但设置残留指向死端口），
+    httpx 默认 trust_env=True 会被动跟随导致请求被拒。Strava 为防 GFW
+    间歇性阻断保持代理优先，仅在 ConnectError/ConnectTimeout 时以
+    trust_env=False 直连重跑一次请求体（均为幂等 GET/POST）；重试仍失败
+    则按原逻辑抛错。
+    """
+    try:
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            return await body(client)
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        async with httpx.AsyncClient(trust_env=False, **client_kwargs) as client:
+            return await body(client)
 
 
 class StravaConfigurationError(RuntimeError):
@@ -42,7 +63,8 @@ def authorization_url(state: str) -> str:
 
 async def exchange_code(code: str) -> dict[str, Any]:
     ensure_configured()
-    async with httpx.AsyncClient(timeout=20) as client:
+
+    async def _exchange(client: httpx.AsyncClient) -> dict[str, Any]:
         response = await client.post(
             TOKEN_URL,
             data={
@@ -53,7 +75,9 @@ async def exchange_code(code: str) -> dict[str, Any]:
             },
         )
         response.raise_for_status()
-        token = response.json()
+        return response.json()
+
+    token = await _run_with_client({"timeout": 20}, _exchange)
     save_token(token)
     return token
 
@@ -66,7 +90,7 @@ async def valid_access_token() -> str:
     if int(token["expires_at"]) > int(time.time()) + 120:
         return str(token["access_token"])
 
-    async with httpx.AsyncClient(timeout=20) as client:
+    async def _refresh(client: httpx.AsyncClient) -> dict[str, Any]:
         response = await client.post(
             TOKEN_URL,
             data={
@@ -77,7 +101,9 @@ async def valid_access_token() -> str:
             },
         )
         response.raise_for_status()
-        refreshed = response.json()
+        return response.json()
+
+    refreshed = await _run_with_client({"timeout": 20}, _refresh)
     refreshed["athlete"] = {"id": token.get("athlete_id")}
     save_token(refreshed)
     return str(refreshed["access_token"])
@@ -85,10 +111,11 @@ async def valid_access_token() -> str:
 
 async def sync_activities(per_page: int = 100) -> int:
     access_token = await valid_access_token()
-    count = 0
-    page = 1
     headers = {"Authorization": f"Bearer {access_token}"}
-    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+
+    async def _paged_sync(client: httpx.AsyncClient) -> int:
+        count = 0
+        page = 1
         while page <= 5:
             response = await client.get(
                 f"{API_URL}/athlete/activities",
@@ -104,20 +131,27 @@ async def sync_activities(per_page: int = 100) -> int:
             if len(activities) < per_page:
                 break
             page += 1
-    return count
+        return count
+
+    return await _run_with_client({"timeout": 30, "headers": headers}, _paged_sync)
 
 
 async def sync_activity(activity_id: int) -> dict[str, Any] | None:
     """Fetch one activity after a webhook event and upsert it locally."""
     access_token = await valid_access_token()
     headers = {"Authorization": f"Bearer {access_token}"}
-    async with httpx.AsyncClient(timeout=20, headers=headers) as client:
+
+    async def _fetch(client: httpx.AsyncClient) -> dict[str, Any] | None:
         response = await client.get(f"{API_URL}/activities/{activity_id}")
         if response.status_code == 404:
             delete_activity(activity_id)
             return None
         response.raise_for_status()
-        activity = response.json()
+        return response.json()
+
+    activity = await _run_with_client({"timeout": 20, "headers": headers}, _fetch)
+    if activity is None:
+        return None
     save_activity(activity)
     return activity
 
