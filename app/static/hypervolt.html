@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hypervolt 运动后放松引导（手搓版）</title>
+<style>
+  :root { --bg:#121417; --card:#1d2126; --fg:#e8eaed; --dim:#9aa0a6; --acc:#4f8cff; --ok:#34a853; --warn:#fbbc04; --bad:#ea4335; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; font-size:16px; line-height:1.55; }
+  .wrap { max-width:560px; margin:0 auto; padding:14px 14px 40px; }
+  h1 { font-size:19px; margin:8px 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:12px; }
+  .card { background:var(--card); border-radius:12px; padding:14px; margin-bottom:12px; }
+  .card h2 { font-size:15px; margin:0 0 10px; color:var(--acc); }
+  button { font-size:16px; border:none; border-radius:10px; padding:12px 16px; background:var(--acc); color:#fff; margin:4px 4px 4px 0; }
+  button.ghost { background:#2c3138; color:var(--fg); }
+  button:disabled { opacity:.4; }
+  input[type=text] { font-size:16px; padding:10px; border-radius:8px; border:1px solid #3c4043; background:#121417; color:var(--fg); width:170px; }
+  select { font-size:16px; padding:10px; border-radius:8px; border:1px solid #3c4043; background:#121417; color:var(--fg); width:100%; }
+  .status { font-size:13px; color:var(--dim); }
+  .status b { color:var(--fg); }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; margin-left:6px; }
+  .pill.on { background:rgba(52,168,83,.2); color:var(--ok); }
+  .pill.off { background:rgba(234,67,53,.18); color:var(--bad); }
+  .warn { border-left:4px solid var(--warn); background:rgba(251,188,4,.08); }
+  .warn ul { margin:6px 0; padding-left:20px; }
+  .warn li { margin:3px 0; font-size:14px; }
+  .step { padding:9px 10px; border-radius:8px; margin:6px 0; background:#24282e; font-size:14px; display:flex; justify-content:space-between; gap:8px; }
+  .step.cur { outline:2px solid var(--acc); background:#26303f; }
+  .step.done { opacity:.45; text-decoration:line-through; }
+  .step .t { color:var(--dim); white-space:nowrap; }
+  .big { font-size:44px; font-weight:700; text-align:center; margin:6px 0; font-variant-numeric:tabular-nums; }
+  .bar { height:8px; background:#2c3138; border-radius:99px; overflow:hidden; margin:8px 0 2px; }
+  .bar > div { height:100%; background:var(--acc); width:0%; transition:width .25s linear; }
+  .now { font-size:17px; font-weight:600; }
+  .tip { color:var(--dim); font-size:13px; margin-top:4px; }
+  details { font-size:13px; color:var(--dim); }
+  details summary { cursor:pointer; color:var(--acc); margin:4px 0; }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .src { font-size:12px; color:var(--dim); margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Hypervolt 运动后放松引导</h1>
+  <div class="sub">手搓版 · 蓝牙直连控档 · 流程出处见页底</div>
+
+  <div class="card warn">
+    <h2>安全规则（每次必看）</h2>
+    <ul>
+      <li><b>疼痛即停</b>：出现任何尖锐疼痛立即停止（AAOS 原则）。</li>
+      <li>只打肌肉，<b>避开</b>骨头、关节、脊柱、颈前侧、膝盖正反面、伤口淤青处。</li>
+      <li>每部位 ≤2 分钟，<b>缓慢移动</b>，不要定点死压。</li>
+      <li><b>右膝康复期特别提醒</b>：避开右膝周围 10cm，只放松大腿/小腿肌肉中段；膝痛未除前相关动作遵医嘱。</li>
+    </ul>
+  </div>
+
+  <div class="card" id="bleCard">
+    <h2>1. 连接筋膜枪 <span id="connPill" class="pill off">未连接</span></h2>
+    <div class="row">
+      <label>设备 MAC <input type="text" id="mac" placeholder="AA:BB:CC:DD:EE:FF" autocapitalize="characters"></label>
+      <button id="btnConnect">连接</button>
+    </div>
+    <div class="status" id="devStatus">先给筋膜枪开机，再点连接。MAC 只需填一次（本机会记住）。</div>
+    <details>
+      <summary>为什么按钮点了没反应？→ 一次性设置（Chrome 允许局域网页面用蓝牙）</summary>
+      <ol>
+        <li>手机 Chrome 地址栏输入 <b>chrome://flags/#unsafely-treat-insecure-origin-as-secure</b></li>
+        <li>文本框填 <b>http://192.168.18.104:8000</b>，右侧下拉选 <b>Enabled</b></li>
+        <li>点底部 Relaunch 重启 Chrome，再回本页</li>
+      </ol>
+      <div>说明：蓝牙网页接口默认只允许 HTTPS 网站调用，上面是 Chrome 官方提供的局域网例外开关。</div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>2. 选择流程</h2>
+    <select id="routine"></select>
+    <div class="tip" id="routineDesc"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 开始放松</h2>
+    <div class="now" id="nowPart">—</div>
+    <div class="tip" id="nowTip"></div>
+    <div class="big" id="clock">--:--</div>
+    <div class="bar"><div id="prog"></div></div>
+    <div class="status" id="nowMeta"></div>
+    <div style="margin-top:10px">
+      <button id="btnStart">开始</button>
+      <button id="btnPause" class="ghost" disabled>暂停</button>
+      <button id="btnPrev" class="ghost">上一步</button>
+      <button id="btnNext" class="ghost">下一步</button>
+      <button id="btnStop" class="ghost">结束</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>步骤清单</h2>
+    <div id="steps"></div>
+  </div>
+
+  <div class="card">
+    <h2>流程与出处</h2>
+    <div class="src">
+      时长与手法：Hyperice 官方 Hypervolt 使用指引（每肌群 30 秒–2 分钟、沿肌肉缓慢移动、避开骨骼关节）；
+      放松时机与强度：ACSM 运动后冷身原则、Mayo Clinic 恢复与拉伸指南；
+      蓝牙控制协议：社区逆向成果（Hypervolt 2 实测）。本页面为家庭自用工具，非医疗设备。
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ====== Hypervolt 2 BLE 协议（社区逆向，docs/protocol.md）====== */
+const SVC = "31cb456a-3c31-4e56-8c2b-e8f479d2b056";
+const CHR_AUTH = "31cb4570-3c31-4e56-8c2b-e8f479d2b056";
+const CHR_CTRL = "31cb456c-3c31-4e56-8c2b-e8f479d2b056";
+const CHR_TELE = "31cb456d-3c31-4e56-8c2b-e8f479d2b056";
+
+const LOOKUP = [
+1,128,64,32,16,8,132,66,33,144,72,164,82,41,20,10,
+133,194,97,176,88,172,214,107,53,154,205,102,51,153,76,166,
+83,169,84,42,149,202,229,242,121,60,158,207,103,179,217,108,
+182,91,45,22,11,5,130,65,160,80,40,148,74,165,210,105,
+52,26,141,70,35,145,200,228,114,57,28,142,199,227,241,248,
+252,254,255,127,63,31,15,7,131,193,224,112,56,156,206,231,
+243,249,124,190,223,111,55,155,77,38,19,137,68,34,17,136,
+196,98,49,152,204,230,115,185,92,174,215,235,117,186,221,110,
+183,219,109,54,27,13,6,3,129,192,96,48,24,140,198,99,
+177,216,236,246,123,61,30,143,71,163,209,232,244,122,189,94,
+175,87,171,85,170,213,234,245,250,253,126,191,95,47,23,139,
+69,162,81,168,212,106,181,218,237,118,59,29,14,135,195,225,
+240,120,188,222,239,119,187,93,46,151,203,101,178,89,44,150,
+75,37,146,73,36,18,9,4,2,1,128,64,32,16,8,132,
+66,33,144,72,164,82,41,20,10,133,194,97,176,88,172,214,
+107,53,154,205,102,51,153,76,166,83,169,84,42,149,202,229];
+
+function sb(v){ return v >= 128 ? v - 256 : v; }
+
+function authResponse(macStr, ch){
+  const mac = macStr.replace(/[:-]/g, "");
+  if (!/^[0-9a-fA-F]{12}$/.test(mac)) throw new Error("MAC 格式不对，应为 12 位十六进制");
+  const m = []; for (let i = 0; i < 6; i++) m.push(parseInt(mac.substr(i*2, 2), 16));
+  const b0 = ch[3], b1 = ch[2], b2 = ch[1];
+  const index1 = (m[4] ^ b2) & 0xFF;
+  const index2 = (sb(m[2]) & sb(b1)) & 0xFF;
+  const index3 = (b0 ^ m[5]) & 0xFF;
+  const value1 = ((sb(m[5]) | sb(m[1])) ^ sb(LOOKUP[index1] & 0xFF)) & 0xFF;
+  const out1 = (value1 >> (b0 & 1)) & 0xFF;
+  const value2 = ((LOOKUP[index2] & 0xFFFF) + m[3]) & 0xFFFF;
+  const out2 = (b2 ^ value2) & 0xFF;
+  const value3 = (sb(m[0]) ^ sb(LOOKUP[index3] & 0xFF)) & 0xFF;
+  const out3 = ((value3 << (b1 & 1)) & 0xFF);
+  return new Uint8Array([0x01, out1, out2, out3]);
+}
+
+/* ====== 放松流程（时长/档位按 Hyperice 官方指引 + ACSM/Mayo 冷身原则）====== */
+const ROUTINES = {
+  ride: { name: "骑行后（约 10 分钟）", desc: "针对长途骑行的股四头肌、臀肌、小腿重点放松。右膝康复期已避开膝关节。",
+    steps: [
+      { part:"大腿前侧·股四头肌（左）", head:"球头或平头", speed:2, secs:45, tip:"从髋部向膝方向缓慢扫动，止于膝上方一拳距离" },
+      { part:"大腿前侧·股四头肌（右）", head:"球头或平头", speed:2, secs:45, tip:"右膝康复期：只打大腿中上段，远离膝关节" },
+      { part:"大腿后侧·腘绳肌（左）", head:"球头", speed:2, secs:45, tip:"坐姿腿伸直或站姿扶椅，从臀下扫向膝窝上方" },
+      { part:"大腿后侧·腘绳肌（右）", head:"球头", speed:2, secs:45, tip:"同上，避开膝窝" },
+      { part:"臀部·臀大肌（左）", head:"球头", speed:3, secs:60, tip:"肌肉厚可用 3 档，画小圈缓慢移动" },
+      { part:"臀部·臀大肌（右）", head:"球头", speed:3, secs:60, tip:"同上" },
+      { part:"小腿·腓肠肌（左）", head:"气垫头或球头", speed:1, secs:40, tip:"从小腿肚中段向下扫，避开跟腱止点骨头" },
+      { part:"小腿·腓肠肌（右）", head:"气垫头或球头", speed:1, secs:40, tip:"同上" },
+      { part:"髋前·髂腰肌区域", head:"气垫头", speed:1, secs:30, tip:"裤线下方肌肉处轻扫，感觉不适立即跳过" },
+      { part:"肩颈·上斜方肌", head:"气垫头", speed:1, secs:30, tip:"骑行姿势易僵，只打肩部肌肉，远离颈椎与颈前" }
+    ]},
+  run: { name: "跑步后（约 9 分钟）", desc: "重点小腿、股四头肌、臀部。",
+    steps: [
+      { part:"小腿·腓肠肌+比目鱼肌（左）", head:"气垫头", speed:1, secs:50, tip:"屈膝坐姿，整个小腿肚缓慢扫动" },
+      { part:"小腿·腓肠肌+比目鱼肌（右）", head:"气垫头", speed:1, secs:50, tip:"同上" },
+      { part:"大腿前侧·股四头肌（左）", head:"球头", speed:2, secs:45, tip:"止于膝上方一拳距离" },
+      { part:"大腿前侧·股四头肌（右）", head:"球头", speed:2, secs:45, tip:"右膝康复期：只打大腿中上段" },
+      { part:"大腿外侧·阔筋膜张肌（左）", head:"平头", speed:1, secs:30, tip:"沿大腿外侧轻扫，不要压在股骨大转子骨点上" },
+      { part:"大腿外侧·阔筋膜张肌（右）", head:"平头", speed:1, secs:30, tip:"同上" },
+      { part:"臀部·臀大肌（左）", head:"球头", speed:3, secs:60, tip:"" },
+      { part:"臀部·臀大肌（右）", head:"球头", speed:3, secs:60, tip:"" },
+      { part:"足底·足弓（左）", head:"子弹头", speed:1, secs:30, tip:"坐姿，枪头轻触足弓肌肉，避开脚跟骨" },
+      { part:"足底·足弓（右）", head:"子弹头", speed:1, secs:30, tip:"同上" }
+    ]},
+  upper: { name: "上肢力量后（约 8 分钟）", desc: "胸、肩、背、手臂。",
+    steps: [
+      { part:"胸部·胸大肌（左）", head:"球头", speed:2, secs:40, tip:"避开锁骨与胸骨，只打肌肉隆起处" },
+      { part:"胸部·胸大肌（右）", head:"球头", speed:2, secs:40, tip:"同上" },
+      { part:"肩部·三角肌（左）", head:"球头", speed:1, secs:40, tip:"前中后束缓慢扫动，避开肩峰骨点" },
+      { part:"肩部·三角肌（右）", head:"球头", speed:1, secs:40, tip:"同上" },
+      { part:"背部·背阔肌（左）", head:"平头", speed:2, secs:45, tip:"沿腋窝后下方向腰部扫，避开脊柱" },
+      { part:"背部·背阔肌（右）", head:"平头", speed:2, secs:45, tip:"同上" },
+      { part:"上臂·肱二头/三头肌（左）", head:"球头", speed:1, secs:40, tip:"" },
+      { part:"上臂·肱二头/三头肌（右）", head:"球头", speed:1, secs:40, tip:"" },
+      { part:"前臂肌群（左）", head:"气垫头", speed:1, secs:30, tip:"避开腕肘骨点" },
+      { part:"前臂肌群（右）", head:"气垫头", speed:1, secs:30, tip:"同上" }
+    ]},
+  lower: { name: "下肢力量后（约 10 分钟）", desc: "与骑行后类似，加大臀部与股四头比重。右膝康复期已避开膝关节。",
+    steps: [
+      { part:"臀部·臀大肌（左）", head:"球头", speed:3, secs:60, tip:"" },
+      { part:"臀部·臀大肌（右）", head:"球头", speed:3, secs:60, tip:"" },
+      { part:"大腿前侧·股四头肌（左）", head:"球头或平头", speed:2, secs:50, tip:"止于膝上方一拳距离" },
+      { part:"大腿前侧·股四头肌（右）", head:"球头或平头", speed:2, secs:50, tip:"右膝康复期：只打大腿中上段" },
+      { part:"大腿后侧·腘绳肌（左）", head:"球头", speed:2, secs:45, tip:"" },
+      { part:"大腿后侧·腘绳肌（右）", head:"球头", speed:2, secs:45, tip:"避开膝窝" },
+      { part:"大腿内侧·内收肌（左）", head:"气垫头", speed:1, secs:30, tip:"大腿内侧上段，轻档" },
+      { part:"大腿内侧·内收肌（右）", head:"气垫头", speed:1, secs:30, tip:"同上" },
+      { part:"小腿·腓肠肌（左）", head:"气垫头", speed:1, secs:40, tip:"" },
+      { part:"小腿·腓肠肌（右）", head:"气垫头", speed:1, secs:40, tip:"" }
+    ]},
+  full: { name: "全身通用（约 8 分钟）", desc: "不确定选哪个就用这个，大肌群轮一遍。",
+    steps: [
+      { part:"肩颈·上斜方肌", head:"气垫头", speed:1, secs:30, tip:"远离颈椎" },
+      { part:"背部·背阔肌（左）", head:"平头", speed:2, secs:40, tip:"避开脊柱" },
+      { part:"背部·背阔肌（右）", head:"平头", speed:2, secs:40, tip:"同上" },
+      { part:"臀部·臀大肌（左）", head:"球头", speed:3, secs:50, tip:"" },
+      { part:"臀部·臀大肌（右）", head:"球头", speed:3, secs:50, tip:"" },
+      { part:"大腿前侧·股四头肌（左）", head:"球头", speed:2, secs:40, tip:"止于膝上方一拳距离" },
+      { part:"大腿前侧·股四头肌（右）", head:"球头", speed:2, secs:40, tip:"右膝康复期：只打大腿中上段" },
+      { part:"大腿后侧·腘绳肌（左）", head:"球头", speed:2, secs:40, tip:"" },
+      { part:"大腿后侧·腘绳肌（右）", head:"球头", speed:2, secs:40, tip:"" },
+      { part:"小腿·腓肠肌（左）", head:"气垫头", speed:1, secs:35, tip:"" },
+      { part:"小腿·腓肠肌（右）", head:"气垫头", speed:1, secs:35, tip:"" }
+    ]}
+};
+
+/* ====== BLE 状态 ====== */
+let device = null, ctrlChar = null, connected = false, devSpeed = 0, devLoad = 0;
+const $ = id => document.getElementById(id);
+const macInput = $("mac");
+macInput.value = localStorage.getItem("hv_mac") || "";
+
+function setConn(on, msg){
+  connected = on;
+  const pill = $("connPill");
+  pill.textContent = on ? "已连接" : "未连接";
+  pill.className = "pill " + (on ? "on" : "off");
+  if (msg) $("devStatus").innerHTML = msg;
+}
+
+async function connect(){
+  if (!navigator.bluetooth){
+    $("devStatus").innerHTML = "当前浏览器不支持网页蓝牙：请用 <b>Chrome</b>，并完成上方“一次性设置”。";
+    return;
+  }
+  const mac = macInput.value.trim();
+  try { authResponse(mac, [1,2,3,4]); }
+  catch(e){ $("devStatus").textContent = e.message; return; }
+  localStorage.setItem("hv_mac", mac);
+  $("devStatus").textContent = "正在搜索设备（请确认筋膜枪已开机）…";
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "Hypervolt" }, { namePrefix: "Hyperice" }, { services: [SVC] }],
+      optionalServices: [SVC, "device_information"]
+    });
+    device.addEventListener("gattserverdisconnected", () => {
+      setConn(false, "连接已断开。重新点“连接”即可。");
+      ctrlChar = null;
+    });
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    const authChar = await svc.getCharacteristic(CHR_AUTH);
+    const chVal = await authChar.readValue();
+    const challenge = new Uint8Array(chVal.buffer.slice(chVal.byteOffset, chVal.byteOffset + chVal.byteLength));
+    const resp = authResponse(mac, challenge);
+    await authChar.writeValueWithResponse(resp);
+    ctrlChar = await svc.getCharacteristic(CHR_CTRL);
+    await ctrlChar.startNotifications();
+    ctrlChar.addEventListener("characteristicvaluechanged", e => {
+      const v = new Uint8Array(e.target.value.buffer);
+      devSpeed = v[0]; devLoad = v[1];
+      updateMeta();
+    });
+    try {
+      const teleChar = await svc.getCharacteristic(CHR_TELE);
+      await teleChar.startNotifications();
+      teleChar.addEventListener("characteristicvaluechanged", e => {
+        const v = new DataView(e.target.value.buffer);
+        const volt = v.getUint16(10, false) / 100;
+        const temp = v.getUint8(12);
+        $("devStatus").innerHTML = `设备：<b>${device.name || "Hypervolt"}</b> · 电压 ${volt.toFixed(2)}V · 温度 ${temp}℃`;
+      });
+    } catch(_) {}
+    setConn(true, `设备：<b>${device.name || "Hypervolt"}</b> · 鉴权成功，可以开始`);
+  } catch(err){
+    setConn(false, "连接失败：" + err.message + "（没搜到设备时确认已开机；鉴权失败时核对 MAC）");
+  }
+}
+
+async function setSpeed(s){
+  if (!connected || !ctrlChar) return;
+  try { await ctrlChar.writeValueWithResponse(new Uint8Array([s])); }
+  catch(err){ console.warn("setSpeed", err); }
+}
+
+/* ====== 引导引擎 ====== */
+let steps = [], idx = 0, remain = 0, timer = null, paused = false, wakeLock = null;
+
+function loadRoutine(){
+  const key = $("routine").value;
+  steps = ROUTINES[key].steps.slice();
+  $("routineDesc").textContent = ROUTINES[key].desc;
+  idx = 0; remain = 0; stopTimer(); renderSteps(); showIdle();
+}
+function showIdle(){
+  $("nowPart").textContent = "—";
+  $("nowTip").textContent = "";
+  $("clock").textContent = "--:--";
+  $("prog").style.width = "0%";
+  updateMeta();
+}
+function fmt(s){ return String(Math.floor(s/60)).padStart(2,"0") + ":" + String(s%60).padStart(2,"0"); }
+function updateMeta(){
+  const conn = connected ? `设备档位 ${devSpeed} · 压力 ${devLoad}` : "手动模式：请按提示自己在枪上调档";
+  const st = steps[idx];
+  $("nowMeta").textContent = timer && st
+    ? `第 ${idx+1}/${steps.length} 步 · 建议 ${st.speed} 档 · ${conn}`
+    : conn;
+}
+function renderSteps(){
+  const box = $("steps"); box.innerHTML = "";
+  steps.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.className = "step" + (i === idx && timer ? " cur" : i < idx || (!timer && i < idx) ? " done" : "");
+    d.innerHTML = `<span>${i+1}. ${s.part}<br><span style="color:var(--dim)">${s.head} · ${s.speed} 档</span></span><span class="t">${fmt(s.secs)}</span>`;
+    box.appendChild(d);
+  });
+}
+function beep(){
+  try {
+    const ctx = beep.ctx || (beep.ctx = new (window.AudioContext || window.webkitAudioContext)());
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 880; g.gain.setValueAtTime(0.15, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    o.start(); o.stop(ctx.currentTime + 0.25);
+  } catch(_) {}
+}
+async function startStep(){
+  const s = steps[idx];
+  remain = s.secs;
+  $("nowPart").textContent = s.part;
+  $("nowTip").textContent = `换 ${s.head} · 建议 ${s.speed} 档` + (s.tip ? " · " + s.tip : "");
+  beep();
+  await setSpeed(s.speed);
+  renderSteps(); tick();
+}
+function tick(){
+  $("clock").textContent = fmt(remain);
+  const s = steps[idx];
+  $("prog").style.width = (100 * (1 - remain / s.secs)) + "%";
+  updateMeta();
+}
+function stopTimer(){
+  if (timer){ clearInterval(timer); timer = null; }
+  paused = false;
+  $("btnStart").disabled = false;
+  $("btnPause").disabled = true;
+  $("btnPause").textContent = "暂停";
+  if (wakeLock){ try { wakeLock.release(); } catch(_) {} wakeLock = null; }
+}
+async function start(){
+  if (!steps.length) loadRoutine();
+  if (idx >= steps.length) idx = 0;
+  $("btnStart").disabled = true;
+  $("btnPause").disabled = false;
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch(_) {}
+  await startStep();
+  timer = setInterval(async () => {
+    if (paused) return;
+    remain--;
+    if (remain <= 0){
+      idx++;
+      if (idx >= steps.length){ await finish(); return; }
+      await startStep();
+    } else tick();
+  }, 1000);
+}
+async function finish(){
+  stopTimer();
+  await setSpeed(0);
+  beep(); setTimeout(beep, 400);
+  $("nowPart").textContent = "完成！";
+  $("nowTip").textContent = "喝口水，慢走 3–5 分钟让心率下来（ACSM 冷身原则）。";
+  $("clock").textContent = "✔";
+  idx = 0; renderSteps(); updateMeta();
+}
+async function stopAll(){
+  stopTimer();
+  await setSpeed(0);
+  idx = 0; renderSteps(); showIdle();
+  $("nowPart").textContent = "已停止";
+}
+
+$("btnConnect").onclick = connect;
+$("btnStart").onclick = start;
+$("btnStop").onclick = stopAll;
+$("btnPause").onclick = async () => {
+  if (!timer) return;
+  paused = !paused;
+  $("btnPause").textContent = paused ? "继续" : "暂停";
+  await setSpeed(paused ? 0 : steps[idx].speed);
+};
+$("btnNext").onclick = async () => { if (timer && idx < steps.length - 1){ idx++; await startStep(); } };
+$("btnPrev").onclick = async () => { if (timer && idx > 0){ idx--; await startStep(); } };
+
+/* 初始化流程下拉 */
+const sel = $("routine");
+for (const [k, r] of Object.entries(ROUTINES)){
+  const o = document.createElement("option"); o.value = k; o.textContent = r.name; sel.appendChild(o);
+}
+sel.onchange = loadRoutine;
+loadRoutine();
+
+if (!navigator.bluetooth){
+  $("devStatus").innerHTML = "当前环境无网页蓝牙：可用<b>手动模式</b>（按页面提示自己在枪上调档）。要自动控档请用 Chrome 并完成上方一次性设置。";
+}
+</script>
+</body>
+</html>
