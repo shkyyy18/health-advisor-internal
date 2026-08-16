@@ -27,3 +27,6 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Downloaded Hyperice tutorial videos (large binaries, re-downloadable)
+hyperice/videos/
