@@ -44,7 +44,7 @@
 <body>
 <div class="wrap">
   <h1>Hypervolt 运动后放松引导</h1>
-  <div class="sub">手搓版 · 蓝牙直连控档 · 流程出处见页底</div>
+  <div class="sub">手搓版 · 蓝牙直连控档 · 已在 Hypervolt 2 Pro 实测（1-5 档全部可控）</div>
 
   <div class="card warn">
     <h2>安全规则（每次必看）</h2>
@@ -62,7 +62,7 @@
       <label>设备 MAC <input type="text" id="mac" placeholder="AA:BB:CC:DD:EE:FF" autocapitalize="characters"></label>
       <button id="btnConnect">连接</button>
     </div>
-    <div class="status" id="devStatus">先给筋膜枪开机，再点连接。MAC 只需填一次（本机会记住）。</div>
+    <div class="status" id="devStatus">先给筋膜枪开机，再点连接。MAC 已预填你家的 Hypervolt 2 Pro，一般不用改。</div>
     <details>
       <summary>为什么按钮点了没反应？→ 一次性设置（Chrome 允许局域网页面用蓝牙）</summary>
       <ol>
@@ -230,7 +230,7 @@ const ROUTINES = {
 let device = null, ctrlChar = null, connected = false, devSpeed = 0, devLoad = 0;
 const $ = id => document.getElementById(id);
 const macInput = $("mac");
-macInput.value = localStorage.getItem("hv_mac") || "";
+macInput.value = localStorage.getItem("hv_mac") || "E2:1D:AE:06:02:AF";
 
 function setConn(on, msg){
   connected = on;
