@@ -110,10 +110,9 @@ class Settings:
             mi_fitness_sync_days=_int_from_env("MI_FITNESS_SYNC_DAYS", 14, 1, 90),
             mobile_access_password=os.getenv("MOBILE_ACCESS_PASSWORD", ""),
             meal_llm_api_key=os.getenv("MEAL_LLM_API_KEY", ""),
-            meal_llm_base_url=os.getenv(
-                "MEAL_LLM_BASE_URL", "https://cdk.goodmoonlight.com/responses"
-            ),
-            meal_llm_model=os.getenv("MEAL_LLM_MODEL", "gpt-5.6-sol"),
+            # 图片分析端点须显式配置（任何 OpenAI Responses 兼容服务均可），默认留空
+            meal_llm_base_url=os.getenv("MEAL_LLM_BASE_URL", ""),
+            meal_llm_model=os.getenv("MEAL_LLM_MODEL", ""),
             lan_token=_load_lan_token(),
         )
 

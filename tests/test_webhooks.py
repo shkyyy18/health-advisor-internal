@@ -128,8 +128,15 @@ def test_public_tunnel_only_exposes_webhook(monkeypatch):
     local_response = client.get("/health", headers={"host": "127.0.0.1:8000"})
     assert local_response.status_code == 200
 
+    # 隧道判定只认 Host 与回调域名一致；x-forwarded-proto 可伪造，不再触发隧道模式
     forwarded_response = client.get(
         "/health",
         headers={"host": "localhost:8000", "x-forwarded-proto": "https"},
     )
-    assert forwarded_response.status_code == 404
+    assert forwarded_response.status_code == 200
+
+    tunnel_response = client.get(
+        "/health",
+        headers={"host": "health-example.ngrok-free.app", "x-forwarded-proto": "https"},
+    )
+    assert tunnel_response.status_code == 404

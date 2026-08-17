@@ -75,8 +75,7 @@ async def lifespan(_: FastAPI):
     init_db()
     watchdog = asyncio.create_task(_idle_watchdog())
     logger.info(
-        "LAN access enabled. Phone dashboard URL: http://<本机局域网IP>:8000/?token=%s",
-        settings.lan_token,
+        "LAN access enabled. Phone dashboard: http://<本机局域网IP>:8000/（令牌见 data/lan_token.txt，勿写入日志）"
     )
     yield
     watchdog.cancel()
@@ -96,7 +95,9 @@ async def protect_public_tunnel(request: Request, call_next):
     callback_host = urlparse(settings.strava_webhook_callback_url).netloc.lower()
     forwarded_host = request.headers.get("x-forwarded-host", "")
     request_host = (forwarded_host or request.headers.get("host", "")).lower()
-    is_public_tunnel = callback_host and (request_host == callback_host or request.headers.get("x-forwarded-proto", "").lower() == "https")
+    # 只认 Host 与回调域名一致：x-forwarded-proto 可由客户端伪造，
+    # 凭它判隧道会让任何人把站点切入"隧道模式"（其余路径全 404）。
+    is_public_tunnel = bool(callback_host) and request_host == callback_host
     if not is_public_tunnel: return await call_next(request)
     if request.url.path.startswith("/webhooks/strava"): return await call_next(request)
     if request.url.path == "/mobile" or request.url.path.startswith("/api/meals/"):

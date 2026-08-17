@@ -43,19 +43,13 @@
 - 计算恢复状态、训练负荷、体重和体脂趋势；
 - 快速手工记录或照片辅助记录饮食；
 - 生成可解释的训练、饮食和恢复建议；
-- 所有个人数据默认保存在本地 SQLite，服务默认仅监听 `127.0.0.1`。
+- 所有个人数据默认保存在本地 SQLite；服务绑定 `0.0.0.0` 以便手机局域网访问，非本机来源一律要求访问令牌（见下文"隐私与安全"）。
 
-## 与 Mi Fitness Data Bridge 的关系
+## 与 Mi Bridge 的关系
 
-小米连接器已经拆分为独立项目：
+小米连接器已经拆分为独立项目：[Mi Bridge（米桥）](https://github.com/shkyyy18/mi-bridge)。
 
-```text
-D:\CodexWorkspace\projects\mi_fitness_data_bridge
-```
-
-> `D:\AIWorkspace` is a junction that points to the same parent directory for historical compatibility; new documentation and scripts use the stable `D:\CodexWorkspace` path.
-
-- **Mi Fitness Data Bridge：**帮助用户拥有、导出和复用自己的小米健康数据；
+- **Mi Bridge（米桥）：**帮助用户拥有、导出和复用自己的小米健康数据；
 - **Health Advisor：**把小米、Strava 和饮食数据组合起来，帮助用户真正执行减脂计划。
 
 本项目不再复制或 vendor 小米连接器源码。桥接器是唯一连接器实现，健康顾问只把它作为数据源依赖。
