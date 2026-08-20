@@ -15,7 +15,7 @@ logDir = stateDir & "\logs"
 If Not fso.FolderExists(resDir) Then fso.CreateFolder(resDir)
 If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
 logFile = logDir & "\" & TASK_NAME & ".last.log"
-shell.CurrentDirectory = "D:\AIWorkspace\projects\health_assistant"
+shell.CurrentDirectory = "D:\AIWorkspace\projects\health-advisor-internal"
 cmd = "cmd.exe /c C:\Python314\pythonw.exe -m scripts.start_health_services > " & Q & logFile & Q & " 2>&1"
 If ASYNC_LAUNCH = 1 Then
     shell.Run cmd, 0, False

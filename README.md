@@ -75,15 +75,15 @@ Strava API ─────────────┤
 ```powershell
 cd D:\CodexWorkspace\projects
 git clone https://github.com/shkyyy18/mi-fitness-data-bridge.git mi_fitness_data_bridge
-git clone https://github.com/shkyyy18/health-advisor.git health_assistant
-cd health_assistant
+git clone https://github.com/shkyyy18/health-advisor.git health-advisor-internal
+cd health-advisor-internal
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ..\mi_fitness_data_bridge
 pip install -e ".[dev,xiaomi]"
 ```
 
-> If you previously used `D:\AIWorkspace`, that path is a junction to the same location; the stable path is `D:\CodexWorkspace\projects\health_assistant`.
+> If you previously used `D:\AIWorkspace`, that path is a junction to the same location; the stable path is `D:\CodexWorkspace\projects\health-advisor-internal`.
 
 复制 `.env.example` 为 `.env`，填写本地配置，然后运行：
 
