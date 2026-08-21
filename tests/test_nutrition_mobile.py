@@ -130,7 +130,8 @@ def test_quick_manual_meal_endpoint_saves_without_meal_llm():
 
 
 def test_nutrition_summary_exposes_recent_logging_coverage():
-    now = datetime.now(timezone.utc)
+    # 固定时间：用墙钟 now 时，本地时间 00:00–02:00 运行会让 -1d 与 -1d-2h 两条记录跨本地日期而失败
+    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
     nutrition = [
         {"eaten_at": now.isoformat(), "source": "quick_manual"},
         {"eaten_at": (now - timedelta(days=1)).isoformat(), "source": "photo_ai"},
@@ -138,7 +139,7 @@ def test_nutrition_summary_exposes_recent_logging_coverage():
         {"eaten_at": (now - timedelta(days=10)).isoformat(), "source": "quick_manual"},
     ]
 
-    result = build_summary([], [], [], nutrition=nutrition)["nutrition"]
+    result = build_summary([], [], [], nutrition=nutrition, now=now)["nutrition"]
 
     assert result["logged_days"] == 2
     assert result["record_count"] == 3
