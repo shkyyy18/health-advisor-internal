@@ -45,6 +45,15 @@ def port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def wait_ready(timeout_seconds: int) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if port_open(PORT):
+            return True
+        time.sleep(1)
+    return False
+
+
 def ensure_service() -> str | None:
     """Return 'running' if already up, 'started' if we launched it, None on failure."""
     if port_open(PORT):
@@ -56,12 +65,7 @@ def ensure_service() -> str | None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        if port_open(PORT):
-            return "started"
-        time.sleep(1)
-    return None
+    return "started" if wait_ready(30) else None
 
 
 def listening_pid(port: int) -> int | None:
@@ -129,8 +133,16 @@ def main() -> int:
     log("开始每日同步。")
     service_state = ensure_service()
     if service_state is None:
-        log("失败：健康助手服务在 30 秒内未就绪，放弃本次同步。")
-        return 1
+        # 偶发冷启动慢（如 07:30 场）：首轮 30 秒未就绪后等 60 秒再重试一次
+        # （只重等不重复启动，首轮拉起的进程可能仍在启动中）；仍不就绪才放弃。
+        # 不简单延长首轮阈值，避免真故障被长时间掩盖（2026-09-04 四方会审裁决）。
+        log("服务首轮 30 秒内未就绪，60 秒后重试一次。")
+        time.sleep(60)
+        if wait_ready(30):
+            service_state = "started"
+        else:
+            log("失败：健康助手服务在 30 秒内未就绪，放弃本次同步。")
+            return 1
 
     failed = False
     for name, path in (("xiaomi", "/api/sync/xiaomi"), ("strava", "/api/sync/strava")):
