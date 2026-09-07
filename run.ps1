@@ -11,4 +11,9 @@ if (-not (Test-Path -LiteralPath '.env')) {
 
 $argsList = @('app.main:app', '--host', '0.0.0.0', '--port', '8000')
 if ($Reload) { $argsList += '--reload' }
-python -m uvicorn @argsList
+$python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+    $python = (Get-Command python -ErrorAction Stop).Source
+}
+& $python -m uvicorn @argsList
+exit $LASTEXITCODE

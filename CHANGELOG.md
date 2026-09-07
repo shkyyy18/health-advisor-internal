@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed (2026-09-07 audit)
+
+- Correct hidden daily-sync VBS syntax; use the local venv interpreter, capture console logs, and propagate process failures through Windows launchers.
+- Prefer the local interpreter in the task installer and export existing task XML before replacement/removal.
+- Isolate test-collection configuration and LAN tokens with `HEALTH_ENV_FILE`, in addition to temporary test databases.
+- Correct bridge dependency license attribution and distinguish mocked/local verification from live cloud integration.
+
+
 ### Added
 
 - Mobile daily coaching card linking training, nutrition, recovery, and measurement actions.

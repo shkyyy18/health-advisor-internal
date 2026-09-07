@@ -64,7 +64,9 @@ def _load_lan_token() -> str:
     return token
 
 
-_load_dotenv(PROJECT_ROOT / ".env")
+# An explicit file override allows isolated test/deployment configurations without
+# ever loading the live checkout's credentials. Normal installs still use .env.
+_load_dotenv(_path_from_env("HEALTH_ENV_FILE", PROJECT_ROOT / ".env"))
 
 
 @dataclass(frozen=True)

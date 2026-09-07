@@ -93,6 +93,8 @@ pip install -e ".[dev,xiaomi]"
 
 本地看板：`http://127.0.0.1:8000/`
 
+Windows 启动入口和计划任务安装器优先使用项目 `.venv\Scripts\python.exe`，不存在时回退到 PATH 中的 Python。VBS 负责隐藏窗口，使用 `python.exe` 保留标准输出/错误及失败退出码。安装器修改或卸载已有计划任务前会备份 XML 到 `logs/task-backups/`；本次代码审计没有修改机器上的现有计划任务。
+
 Public tunnels are **disabled by default**. The startup script only attempts to launch ngrok when `.env` explicitly contains `HEALTH_ENABLE_NGROK=true` and authentication, privacy, exposed routes, and log handling have been reviewed separately. Keep the value `false` for normal local use; a configured Strava callback URL alone must never enable public access.
 
 ## 首次连接小米
@@ -109,7 +111,7 @@ python scripts\mijia_health_sync.py sync
 
 ## 每日自动同步
 
-计划任务 `HealthAssistantDailySync` 每天 08:10 和 21:40 自动运行 `scripts\daily_sync.py`：通过本地服务接口同步小米 Mi Fitness（睡眠、体成分、日常指标）和 Strava 活动，结果写入 `logs\daily_sync.log`，任务返回码非 0 表示有失败项。`StartWhenAvailable` 会在开机后补跑错过的同步。
+安装后，计划任务 `HealthAssistantDailySync` 每天 08:10 和 21:40 自动运行 `scripts\daily_sync.py`：通过本地服务接口同步小米 Mi Fitness（睡眠、体成分、日常指标）和 Strava 活动，结果写入 `logs\daily_sync.log`，任务返回码非 0 表示有失败项。`StartWhenAvailable` 会在开机后补跑错过的同步。
 
 安装或卸载：
 
@@ -137,7 +139,11 @@ python -m pytest -q -p no:cacheprovider
 python -m py_compile app\analytics.py app\db.py app\main.py app\xiaomi_sync.py
 ```
 
-测试会把数据库切换到临时目录，不会读写真实的 `data/health.db`。
+测试会在导入应用前隔离配置与 LAN 令牌，并把数据库切换到临时目录，不加载工作目录中的真实 `.env` 或读写真实的 `data/health.db`。独立验证时可设置 `HEALTH_ENV_FILE` 指向专用配置文件；默认仍加载项目 `.env`。
+
+2026-09-07（Windows / Python 3.14）验证：**88 passed，1 条第三方 TestClient 弃用警告**。覆盖小米/Strava/图片分析 mock、饮食记录、看板、访问控制以及 Windows 启动脚本。wheel 构建及隔离安装启动通过，首页、移动页、汇总接口和静态资源返回 200，合成饮食记录写入成功。没有同步记录时显示“尚未同步”，不把数据库文件修改时间冒充同步时间。
+
+**验证边界：**真实小米登录/同步、Strava OAuth 授权和外部餐食图片接口尚未完成本轮实账号端到端验收；不应将 mock 通过表述为所有云端流程已经跑通。
 
 ## 隐私与安全
 
@@ -147,6 +153,8 @@ python -m py_compile app\analytics.py app\db.py app\main.py app\xiaomi_sync.py
 - SQLite 数据库、导出数据；
 - 健康日志、餐食照片、运行日志；
 - 包含真实个人指标的截图和测试夹具。
+
+局域网查看健康页面/API 时，使用 `HEALTH_LAN_TOKEN` 或本机生成的 `data/lan_token.txt` 中令牌（查询参数 `token` 或请求头 `X-LAN-Token`）；不得把含令牌的地址或文件上传。静态资源无需令牌，本机回环访问免令牌；显式开启的公网隧道另走受限路由及访问验证。仅需本机使用时可直接运行 `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000`。
 
 详见 `SECURITY.md`。
 

@@ -4,7 +4,7 @@ Option Explicit
 Const TASK_NAME = "HealthAssistantDailySync"
 Const EXPECT_OUTPUT = 0
 Const ASYNC_LAUNCH = 0
-Dim shell, fso, projectDir, stateDir, resDir, logDir, logFile, cmd, exitCode, logSize, suspicious, ts, json, outFile, Q
+Dim shell, fso, projectDir, stateDir, resDir, logDir, logFile, cmd, exitCode, logSize, suspicious, ts, json, outFile, Q, pythonExe
 Q = Chr(34)
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -16,7 +16,11 @@ If Not fso.FolderExists(stateDir) Then fso.CreateFolder(stateDir)
 If Not fso.FolderExists(resDir) Then fso.CreateFolder(resDir)
 logFile = logDir & "\HealthAssistantDailySync.last.log"
 shell.CurrentDirectory = projectDir
-cmd = "cmd.exe /c pythonw.exe """ & projectDir & "\scripts\daily_sync.py""" > " & Q & logFile & Q & " 2>&1"
+pythonExe = projectDir & "\.venv\Scripts\python.exe"
+If Not fso.FileExists(pythonExe) Then pythonExe = "python.exe"
+' /s /c requires an outer quote pair around the full command with a quoted executable.
+' WScript.Shell hides the console; use python.exe so stdout/stderr remain available.
+cmd = "cmd.exe /d /s /c " & Q & Q & pythonExe & Q & " " & Q & projectDir & "\scripts\daily_sync.py" & Q & " > " & Q & logFile & Q & " 2>&1" & Q
 If ASYNC_LAUNCH = 1 Then
     shell.Run cmd, 0, False
     exitCode = 0

@@ -10,6 +10,8 @@
 - [x] No `.env`, token, SQLite file, log, photo, export, or real health metric is tracked.
 - [x] Desktop and mobile screenshots contain synthetic data only.
 
+Historical checked items below are not evidence that the current commit CI or a live deployment has been revalidated. See the dated audit evidence.
+
 ## GitHub publication
 
 - [x] Maintain `shkyyy18/health-advisor-internal` as the private primary repository.
@@ -25,7 +27,7 @@
 - [ ] Stop the existing Health Assistant process before deploying new code.
 - [ ] Confirm no sync job or second process is writing `data/health.db`.
 - [ ] Start exactly one service process and verify `/health`, `/`, and `/mobile`.
-- [ ] Confirm the service still binds to `127.0.0.1` unless an authenticated tunnel is intentionally configured.
+- [ ] Confirm the intended bind address: supplied Windows launchers bind `0.0.0.0` for token-protected LAN access; use `--host 127.0.0.1` for loopback-only deployment. Public tunnels require separate explicit opt-in.
 
 ## Product experiment
 
@@ -46,7 +48,8 @@
 
 - `shkyyy18/health-advisor-internal` is the current repository and project URL; legacy `shkyyy18/health-advisor` is not used by the local checkout.
 - Fresh-install dashboard, `/health`, summary/API routes, quick meal logging, Xiaomi mock sync, and Strava webhook/security flows were exercised by the regression suite.
-- `python -m pytest -q -p no:cacheprovider`: 81 passed, 1 warning.
+- `python -m pytest -q -p no:cacheprovider`: 88 passed, 1 warning.
 - `python -m py_compile` passed for application and sync entry points.
-- `python -m build --wheel --no-isolation` was not available in the current environment because the `build` module has no executable entry point; use an environment with the `build` package installed to run the wheel check.
-
+- `python -m pip wheel --no-deps --no-build-isolation --wheel-dir output/validation-wheel .` succeeded. An isolated installed-wheel server returned HTTP 200 for `/health`, `/`, `/mobile`, summary/dashboard APIs, and JS/CSS; a synthetic quick meal was persisted. The temporary process was stopped afterwards.
+- Seven Windows launcher tests use stub projects (paths with spaces), verifying VBS execution, local venv selection, stdout/stderr capture, exit codes 0/7, BAT backend exit propagation, and PowerShell syntax without touching live services/tasks.
+- Tests isolate import-time `.env`/LAN credentials as well as SQLite. Real cloud login, OAuth and meal-analysis-provider integration remain unverified. Existing scheduled tasks and the live service were not changed.

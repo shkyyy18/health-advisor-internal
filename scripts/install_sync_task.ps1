@@ -1,4 +1,4 @@
-param(
+﻿param(
     [switch]$Uninstall,
     [string]$TaskName = 'HealthAssistantDailySync'
 )
@@ -14,6 +14,13 @@ if (-not (Test-Path -LiteralPath $syncScript -PathType Leaf)) {
 }
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+# Back up any existing task before replacement or removal. No live task is changed by tests.
+if ($existing) {
+    $backupDir = Join-Path $project 'logs\task-backups'
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    $backup = Join-Path $backupDir ((Get-Date -Format 'yyyyMMdd-HHmmss-fffffff') + '.xml')
+    Export-ScheduledTask -TaskName $TaskName | Set-Content -LiteralPath $backup -Encoding UTF8
+}
 if ($Uninstall) {
     if ($existing) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
@@ -24,7 +31,7 @@ if ($Uninstall) {
     exit 0
 }
 
-$python = 'C:\Python314\python.exe'
+$python = Join-Path $project '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     $python = (Get-Command python -ErrorAction Stop).Source
 }
