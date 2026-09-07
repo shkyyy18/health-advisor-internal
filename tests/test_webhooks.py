@@ -140,3 +140,16 @@ def test_public_tunnel_only_exposes_webhook(monkeypatch):
         headers={"host": "health-example.ngrok-free.app", "x-forwarded-proto": "https"},
     )
     assert tunnel_response.status_code == 404
+
+def test_local_strava_callback_does_not_enable_public_tunnel_mode(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "settings",
+        replace(
+            main.settings,
+            strava_webhook_callback_url="http://127.0.0.1:8000/webhooks/strava",
+        ),
+    )
+    response = TestClient(main.app).get("/api/summary", headers={"host": "127.0.0.1:8000"})
+
+    assert response.status_code == 200

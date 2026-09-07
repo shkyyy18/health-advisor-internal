@@ -27,8 +27,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Repositioned the product as a local-first, data-driven fat-loss advisor.
-- Moved Mi Fitness acquisition to the independent `mi-fitness-data-bridge` dependency.
+- Moved Mi Fitness acquisition to the independent `mi_fitness_data_bridge` dependency.
 - Removed the vendored connector implementation.
 - Reduced recommendation confidence when food logging coverage is insufficient.
 
-[0.2.0]: https://github.com/shkyyy18/health-advisor/releases/tag/v0.2.0
+[0.2.0]: https://github.com/shkyyy18/health-advisor-internal/releases/tag/v0.2.0

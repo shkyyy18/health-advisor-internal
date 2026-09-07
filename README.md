@@ -1,4 +1,4 @@
-# Health Advisor
+# Health Advisor Internal
 
 **Local-first data-driven fat-loss advisor.**
 
@@ -45,11 +45,11 @@
 - 生成可解释的训练、饮食和恢复建议；
 - 所有个人数据默认保存在本地 SQLite；服务绑定 `0.0.0.0` 以便手机局域网访问，非本机来源一律要求访问令牌（见下文"隐私与安全"）。
 
-## 与 Mi Bridge 的关系
+## 与 Mi Fitness Data Bridge 的关系
 
-小米连接器已经拆分为独立项目：[Mi Bridge（米桥）](https://github.com/shkyyy18/mi-bridge)。
+小米连接器已经拆分为独立项目：[Mi Fitness Data Bridge（Mi Fitness 数据桥）](https://github.com/shkyyy18/mi_fitness_data_bridge)。
 
-- **Mi Bridge（米桥）：**帮助用户拥有、导出和复用自己的小米健康数据；
+- **Mi Fitness Data Bridge（Mi Fitness 数据桥）：**帮助用户拥有、导出和复用自己的小米健康数据；
 - **Health Advisor：**把小米、Strava 和饮食数据组合起来，帮助用户真正执行减脂计划。
 
 本项目不再复制或 vendor 小米连接器源码。桥接器是唯一连接器实现，健康顾问只把它作为数据源依赖。
@@ -73,9 +73,9 @@ Strava API ─────────────┤
 推荐把两个仓库放在同一个父目录：
 
 ```powershell
-cd D:\CodexWorkspace\projects
-git clone https://github.com/shkyyy18/mi-fitness-data-bridge.git mi_fitness_data_bridge
-git clone https://github.com/shkyyy18/health-advisor.git health-advisor-internal
+cd D:\AIWork\repos
+git clone https://github.com/shkyyy18/mi_fitness_data_bridge.git mi_fitness_data_bridge
+git clone https://github.com/shkyyy18/health-advisor-internal.git health-advisor-internal
 cd health-advisor-internal
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -83,7 +83,7 @@ pip install -e ..\mi_fitness_data_bridge
 pip install -e ".[dev,xiaomi]"
 ```
 
-> If you previously used `D:\AIWorkspace`, that path is a junction to the same location; the stable path is `D:\CodexWorkspace\projects\health-advisor-internal`.
+> 本项目主仓库`shkyyy18/health-advisor-internal`是私有的；本地工作目录`D:\AIWork\repos\health-advisor-internal`。
 
 复制 `.env.example` 为 `.env`，填写本地配置，然后运行：
 

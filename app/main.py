@@ -92,12 +92,20 @@ logger = logging.getLogger(__name__)
 @app.middleware("http")
 async def protect_public_tunnel(request: Request, call_next):
     """Keep the webhook public and protect the phone page with HTTP Basic auth."""
-    callback_host = urlparse(settings.strava_webhook_callback_url).netloc.lower()
+    callback_url = urlparse(settings.strava_webhook_callback_url)
+    callback_host = callback_url.netloc.lower()
+    callback_hostname = (callback_url.hostname or "").lower()
     forwarded_host = request.headers.get("x-forwarded-host", "")
     request_host = (forwarded_host or request.headers.get("host", "")).lower()
-    # 只认 Host 与回调域名一致：x-forwarded-proto 可由客户端伪造，
-    # 凭它判隧道会让任何人把站点切入"隧道模式"（其余路径全 404）。
-    is_public_tunnel = bool(callback_host) and request_host == callback_host
+    # Only the configured public callback host enters tunnel mode.
+    # A loopback callback must never make local requests look public.
+    # This keeps the rest of the app available during normal local development.
+    is_loopback_callback = callback_hostname in {"localhost", "127.0.0.1", "::1"}
+    is_public_tunnel = (
+        bool(callback_host)
+        and not is_loopback_callback
+        and request_host == callback_host
+    )
     if not is_public_tunnel: return await call_next(request)
     if request.url.path.startswith("/webhooks/strava"): return await call_next(request)
     if request.url.path == "/mobile" or request.url.path.startswith("/api/meals/"):
@@ -201,12 +209,12 @@ def _state_signature(nonce: str) -> str:
 
 
 def _snapshot_time() -> str:
-    """最近一次数据同步的本地时间；从未记录过同步时退化为数据库文件的修改时间。"""
+    """Return the latest recorded sync time, or the explicit no-sync status."""
     latest = latest_sync_time()
-    if latest:
-        moment = datetime.fromisoformat(latest).astimezone()
-    else:
-        moment = datetime.fromtimestamp(settings.database_path.stat().st_mtime).astimezone()
+    if not latest:
+        # SQLite mtime is creation/write time, not a data-sync timestamp.
+        return "\u5c1a\u672a\u540c\u6b65"
+    moment = datetime.fromisoformat(latest).astimezone()
     return moment.strftime("%Y/%m/%d %H:%M:%S")
 
 

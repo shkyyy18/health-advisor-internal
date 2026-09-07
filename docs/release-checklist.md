@@ -1,4 +1,4 @@
-# Release checklist
+﻿# Release checklist
 
 ## Local validation
 
@@ -12,7 +12,7 @@
 
 ## GitHub publication
 
-- [x] Create `shkyyy18/health-advisor` as a public repository.
+- [x] Maintain `shkyyy18/health-advisor-internal` as the private primary repository.
 - [x] Push `main`.
 - [x] Confirm CI passes for Python 3.11, 3.12, and 3.13.
 - [ ] Enable private vulnerability reporting.
@@ -39,5 +39,14 @@
 - 2026-07-16: 39 tests and the configured syntax checks passed; `git diff --check` passed.
 - 2026-07-16: editable-install metadata dry-run passed. A fresh wheel was built and installed into an isolated target; it contains both templates and excludes `data` and `logs`.
 - 2026-07-16: the autouse test fixture redirects database access to `tmp_path`; tracked-file scanning found no secret, database, log, export, or screenshot artifacts. With no tracked screenshots, the synthetic-screenshot requirement is currently satisfied by absence.
-- 2026-07-16: the public repository, pushed `main`, and successful Python 3.11/3.12/3.13 CI were verified. The local branch is ahead of `origin/main`, so current local work is not yet published.
+- 2026-07-16: the public repository, pushed `main`, and successful Python 3.11/3.12/3.13 CI were verified. The local branch contains local validation fixes; publish only after review (do not push automatically).
 - Still open: vulnerability reporting, branch rules, GitHub Release notes, repository metadata for the bridge, deployment checks, and product experiment evidence.
+
+## 2026-09-07 local audit
+
+- `shkyyy18/health-advisor-internal` is the current repository and project URL; legacy `shkyyy18/health-advisor` is not used by the local checkout.
+- Fresh-install dashboard, `/health`, summary/API routes, quick meal logging, Xiaomi mock sync, and Strava webhook/security flows were exercised by the regression suite.
+- `python -m pytest -q -p no:cacheprovider`: 81 passed, 1 warning.
+- `python -m py_compile` passed for application and sync entry points.
+- `python -m build --wheel --no-isolation` was not available in the current environment because the `build` module has no executable entry point; use an environment with the `build` package installed to run the wheel check.
+

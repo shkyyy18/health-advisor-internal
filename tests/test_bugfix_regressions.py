@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 from fastapi.testclient import TestClient
@@ -50,3 +51,31 @@ def test_tofu_egg_variant_meets_protein_floor():
             break
     assert menu is not None
     assert menu["main_food_protein_g"] >= 118
+
+
+def test_snapshot_time_reports_no_sync_before_database_exists(tmp_path, monkeypatch):
+    database_path = tmp_path / "missing" / "health.db"
+    monkeypatch.setattr(main, "settings", replace(main.settings, database_path=database_path))
+    monkeypatch.setattr(main, "latest_sync_time", lambda: None)
+
+    assert main._snapshot_time() == "\u5c1a\u672a\u540c\u6b65"
+
+
+def test_dashboard_renders_on_fresh_install_before_sqlite_exists(tmp_path, monkeypatch):
+    database_path = tmp_path / "missing" / "health.db"
+    monkeypatch.setattr(main, "settings", replace(main.settings, database_path=database_path))
+    monkeypatch.setattr(main, "latest_sync_time", lambda: None)
+
+    response = TestClient(main.app).get("/")
+
+    assert response.status_code == 200
+    assert "\u5c1a\u672a\u540c\u6b65" in response.text
+
+
+def test_snapshot_time_reports_no_sync_even_when_database_exists(tmp_path, monkeypatch):
+    database_path = tmp_path / "health.db"
+    database_path.touch()
+    monkeypatch.setattr(main, "settings", replace(main.settings, database_path=database_path))
+    monkeypatch.setattr(main, "latest_sync_time", lambda: None)
+
+    assert main._snapshot_time() == "\u5c1a\u672a\u540c\u6b65"
