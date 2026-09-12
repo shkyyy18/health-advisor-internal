@@ -26,3 +26,4 @@ jobs:
       - run: python -c "from app.db import init_db; init_db()"
       - run: python -m pytest -q -p no:cacheprovider
       - run: python -m py_compile app/analytics.py app/db.py app/main.py app/xiaomi_sync.py
+      - run: python -m compileall -q app scripts
