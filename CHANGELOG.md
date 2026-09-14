@@ -40,3 +40,10 @@ All notable changes to this project will be documented in this file.
 - Reduced recommendation confidence when food logging coverage is insufficient.
 
 [0.2.0]: https://github.com/shkyyy18/health-advisor-internal/releases/tag/v0.2.0
+
+## 2026-09-14 — Windows Xiaomi QR login recovery
+
+- Open a newly generated Xiaomi QR image before waiting for the scan; print a manual-open fallback if the viewer fails. Do not create a desktop copy.
+- Add `login --reset-login` to back up only Xiaomi credentials and request a new QR, preserving the health database and Strava settings.
+- Document both required components: QR login dependencies and the separate Mi Fitness data bridge, plus single-writer sync and hidden-dashboard usage.
+- Cover QR display ordering, viewer fallback, backup safety, and invalid reset command combinations with synthetic tests.

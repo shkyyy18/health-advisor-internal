@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+from datetime import datetime
 import socket
 import sys
 from pathlib import Path
@@ -32,6 +34,26 @@ def _validate_auth() -> None:
         raise RuntimeError(f"Authentication file is missing passToken: {AUTH_PATH}")
 
 
+def reset_login() -> Path | None:
+    """Back up only Xiaomi credentials; never delete health data or Strava settings."""
+    if not AUTH_PATH.exists():
+        return None
+    backup = AUTH_PATH.with_name(
+        f"auth.json.backup-{datetime.now():%Y%m%d-%H%M%S-%f}"
+    )
+    AUTH_PATH.rename(backup)
+    return backup
+
+
+def show_qr(path: Path) -> None:
+    """Open the newly generated image, with a visible fallback path on failure."""
+    print(f"QR image (open manually if no image window appears): {path}", flush=True)
+    try:
+        os.startfile(str(path))
+    except (AttributeError, OSError):
+        print("Could not open the image viewer. Open the QR file above manually.", flush=True)
+
+
 def login() -> None:
     """Use Xiaomi QR login and store userId/passToken in the project data dir."""
     try:
@@ -53,6 +75,7 @@ def login() -> None:
     if not login_url:
         raise RuntimeError("Xiaomi login service did not return a QR URL.")
     qrcode.make(login_url).save(str(QR_PATH))
+    show_qr(QR_PATH)
     print("Scan this QR image with the Mi Home app and confirm login:")
     print(QR_PATH)
     print("Keep this window open until login completes.")
@@ -90,7 +113,15 @@ def main() -> None:
         choices=("login", "discover", "doctor", "sync"),
         help="discover is a backward-compatible alias for login",
     )
+    parser.add_argument(
+        "--reset-login", action="store_true",
+        help="Back up Xiaomi credentials and request a fresh QR; only valid with login",
+    )
     args = parser.parse_args()
+    if args.reset_login:
+        if args.command not in {"login", "discover"}:
+            parser.error("--reset-login requires login or discover")
+        reset_login()
     if args.command in {"login", "discover"}:
         login()
     elif args.command == "doctor":

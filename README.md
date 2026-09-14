@@ -182,3 +182,57 @@ python -m py_compile app\analytics.py app\db.py app\main.py app\xiaomi_sync.py
 ## License
 
 MIT，见 `LICENSE`。第三方依赖和来源说明见 `THIRD_PARTY_NOTICES.md`。
+
+## Windows 扫码、重新登录与无终端看板
+
+这条流程把**登录成功**和**同步成功**分开验证；有 `auth.json` 并不代表健康数据已经同步。
+
+### 首次准备（在项目目录执行）
+
+已按上方步骤创建 `.venv` 并把数据桥仓库放在同级目录后，安装两种独立组件：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e '.[xiaomi]' -e ..\mi_fitness_data_bridge
+```
+
+- `mijiaAPI` / `qrcode`：负责小米账号二维码登录。
+- `mi_fitness_data_bridge`：负责读取运动健康数据。只安装扫码组件仍然不能同步健康数据。
+
+### 扫码登录
+
+```powershell
+.\.venv\Scripts\python.exe scripts\mijia_health_sync.py login
+```
+
+需要登录时，程序先生成 `data\.mijia\login_qr.png`，再立即调用系统图片查看器，随后等待扫码。使用**米家 App**，登录与“小米运动健康”相同的小米账号，扫码并确认；保持登录进程运行，等待成功提示。
+
+- 不复制二维码到桌面。
+- 如果没有图片窗口，终端会显示原图路径，可手动打开。
+- 已有登录可复用时，不重复弹二维码。
+- 二维码和登录文件都属于敏感本地数据，不应上传或分享。
+
+### 需要重新扫码时
+
+```powershell
+.\.venv\Scripts\python.exe scripts\mijia_health_sync.py login --reset-login
+```
+
+该命令仅将旧 `auth.json` 重命名为同目录的带时间戳备份，再申请新二维码；**不清空健康数据库、不修改 Strava 配置**。备份仍包含敏感凭据，只保留在 Git 忽略的本地 `data/` 中。登录失败不会伪报同步完成。
+
+### 同步并检查结果
+
+若看板已运行，登录成功后通过同一个后台同步，避免同时启动另一个数据库写入进程：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/sync/xiaomi' -TimeoutSec 600
+```
+
+请求完成后刷新看板核对数据。若返回缺少连接器、鉴权失败或网络错误，应先处理对应错误，不应仅因没有数据就删除数据库。只有在看板和其他同步任务均停止时，才使用前文的独立 `sync` 命令。
+
+### 日常打开看板（不显示终端）
+
+双击 `scripts\run_healthboard.vbs`，或创建指向它的桌面快捷方式。该入口隐藏启动后台、打开浏览器，并尝试同步；失败不会阻止查看已有数据，可查 `logs/open_dashboard.log`。浏览器普通刷新只重新加载页面，不等同于云端同步成功。
+
+Strava 仍需单独配置 Client ID / Client Secret 并完成浏览器授权。修改 `.env` 后，旧服务不会自动读取新值，必须重启真正监听 8000 端口的进程，而不只是其 Windows 虚拟环境父进程。小米重新扫码不会修复 Strava 配置问题。
+
+**验证边界：**二维码展示顺序、查看器失败提示、登录备份及无终端启动已覆盖隔离回归测试；用户实账号的云端授权和最新数据是否齐全，仍应以实际同步结果为准。
