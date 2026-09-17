@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[dev]"
+      - run: python -c "from app.db import init_db; init_db()"
+      - run: python -m pytest -q -p no:cacheprovider
+      - run: python -m py_compile app/analytics.py app/db.py app/main.py app/xiaomi_sync.py
+      - run: python -m compileall -q app scripts
+
+      - run: python scripts/check_publication.py --history

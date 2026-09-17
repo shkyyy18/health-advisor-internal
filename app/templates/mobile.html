@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>快速记录饮食</title>
+  <style>
+    :root{--bg:#f2f6f3;--card:#fff;--ink:#17251f;--muted:#63726b;--brand:#12684e;--soft:#e4f4ed;--line:#dce6e1;--warn:#8a5300;--warnbg:#fff3d9}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink)}
+    main{width:min(680px,100%);margin:auto;padding:18px 14px 60px}h1{font-size:25px;margin:4px 0}h2{font-size:19px;margin:0 0 12px}h3{font-size:16px;margin:18px 0 7px}p,li{line-height:1.65}.muted{color:var(--muted);font-size:13px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:17px;margin:13px 0;box-shadow:0 7px 24px rgba(20,55,42,.05)}.target{background:var(--soft);padding:12px;border-radius:12px}.coach{border-top:5px solid var(--brand)}
+    form{display:grid;gap:12px}label{font-weight:700;display:block;margin-bottom:5px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.nutrients{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:white;font:inherit}textarea{min-height:88px;resize:vertical}.camera{border:2px dashed #9bb8ac;border-radius:14px;padding:22px;text-align:center;background:#f8fbf9}
+    .button{border:0;border-radius:12px;background:var(--brand);color:#fff;padding:14px 16px;font-size:17px;font-weight:750}.button:disabled{opacity:.55}.secondary{background:#315d77}.preview{max-width:100%;max-height:360px;border-radius:12px;display:none;margin:auto}
+    .status{padding:12px;border-radius:10px;background:var(--soft);display:none}.error{background:var(--warnbg);color:var(--warn)}.food{border-top:1px solid var(--line);padding:10px 0}.food:first-child{border-top:0}.numbers{color:var(--muted);font-size:14px}.tag,.pill{display:inline-block;background:var(--soft);color:var(--brand);padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}.coach-title{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.headline{font-size:17px;font-weight:760;line-height:1.55;margin:12px 0}.action{border-top:1px solid var(--line);padding:10px 0}.action:first-child{border-top:0}.action strong{color:var(--brand)}.adjustment{background:var(--warnbg);color:#684100;padding:12px;border-radius:12px;margin:12px 0}.menu{padding-left:0;list-style:none}.menu li{border-top:1px solid var(--line);padding:10px 0}.menu li:first-child{border-top:0}ul{padding-left:20px}.privacy{background:#eef5fa;color:#315d77;padding:11px;border-radius:10px;font-size:13px}
+    @media(max-width:520px){.row,.nutrients{grid-template-columns:1fr}}
+  </style>
+</head>
+<body><main>
+  <header>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <h1>快速记录饮食</h1>
+      <a href="/" style="font-size:14px;font-weight:600;color:var(--brand);">← 返回看板</a>
+    </div>
+    <p class="muted">先保证每天有记录，再逐步提高估算精度。没有图片接口也可以用几十秒完成手工记录。</p>
+    <p class="muted">快照时间：{{ snapshot_time }}</p>
+  </header>
+
+  <section class="card coach">
+    <div class="coach-title">
+      <div>
+        <span class="pill">{{ summary.daily_coaching.status }}</span>
+        <h2 style="margin-top:10px">今日联动教练</h2>
+      </div>
+      <span class="pill">置信度：{{ summary.daily_coaching.confidence }}</span>
+    </div>
+    <div class="headline">{{ summary.daily_coaching.headline }}</div>
+    <div>
+      {% for item in summary.daily_coaching.linked_actions %}
+      <div class="action"><strong>{{ item.area }}：</strong>{{ item.action }}<div class="muted">{{ item.because }}</div></div>
+      {% endfor %}
+    </div>
+    <p class="muted">{{ summary.daily_coaching.next_review }}</p>
+  </section>
+
+  <section class="card">
+    <h2>今天怎么吃</h2>
+    <div class="target"><strong>蛋白质：{{ summary.nutrition.protein_target }}</strong><br>热量：{{ summary.nutrition.energy_target }}</div>
+    <div class="adjustment"><strong>动态调整：</strong>{{ summary.nutrition.adjustment }}</div>
+    <p>{{ summary.nutrition.today_food_goal }}</p>
+    <h3>{{ summary.nutrition.menu_mode }} · {{ summary.nutrition.menu_variant }}</h3>
+    <ul class="menu">
+      {% for meal in summary.nutrition.daily_menu %}
+      <li><strong>{{ meal.meal }}：</strong>{{ meal.foods }}<div class="muted">{{ meal.estimate }} · {{ meal.why }}</div></li>
+      {% endfor %}
+    </ul>
+    <p class="muted">整日估算：{{ summary.nutrition.sample_day_total }}。近7天已记录 {{ summary.nutrition.logged_days }}/7 天（{{ summary.nutrition.coverage_pct }}%），数据置信度{{ summary.nutrition.logging_confidence }}。</p>
+  </section>
+  <section class="card">
+    <h2>30秒手工记录</h2>
+    <p class="muted">食物描述是必填项；热量和三大营养素不知道就留空，不要为了“完整”而编造数字。</p>
+    <form id="quickForm">
+      <div class="row">
+        <div><label for="quickMealType">餐次</label><select id="quickMealType" name="meal_type"><option>早餐</option><option selected>午餐</option><option>晚餐</option><option>加餐</option><option>训练中补给</option></select></div>
+        <div><label for="eatenAt">时间</label><input id="eatenAt" name="eaten_at" type="datetime-local" required></div>
+      </div>
+      <div><label for="description">吃了什么、多少</label><textarea id="description" name="description" maxlength="500" required placeholder="例如：米饭1平碗、青椒肉丝1份、无糖酸奶200克"></textarea></div>
+      <div class="nutrients">
+        <div><label for="kcal">估算热量（千卡）</label><input id="kcal" name="estimated_kcal" type="number" min="0" max="10000" step="1" placeholder="可留空"></div>
+        <div><label for="protein">蛋白质（克）</label><input id="protein" name="protein_g" type="number" min="0" max="1000" step="0.1" placeholder="可留空"></div>
+        <div><label for="carb">碳水（克）</label><input id="carb" name="carb_g" type="number" min="0" max="2000" step="0.1" placeholder="可留空"></div>
+        <div><label for="fat">脂肪（克）</label><input id="fat" name="fat_g" type="number" min="0" max="1000" step="0.1" placeholder="可留空"></div>
+      </div>
+      <div><label for="confidenceManual">数字可信度</label><select id="confidenceManual" name="confidence"><option value="food_only" selected>只确认食物，数字未估算</option><option value="rough_estimate">粗略估算</option><option value="weighed_or_labelled">称重或包装标签</option></select></div>
+      <div><label for="notes">备注</label><input id="notes" name="notes" maxlength="1000" placeholder="例如：外卖、少油、吃了约80%"></div>
+      <button id="quickSubmit" class="button" type="submit">保存这餐</button>
+      <div id="quickStatus" class="status" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>拍照记录饮食（可选）</h2>
+    {% if not meal_llm_ready %}<p class="status error" style="display:block">尚未配置 MEAL_LLM_API_KEY（图片分析密钥），目前仍可使用上面的手工记录。</p>{% endif %}
+    <form id="mealForm">
+      <div><label for="mealType">这是哪一餐？</label><select id="mealType" name="meal_type"><option>早餐</option><option selected>午餐</option><option>晚餐</option><option>加餐</option><option>训练中补给</option></select></div>
+      <div class="camera"><input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required><p class="muted">建议从正上方拍，让主食、肉、蔬菜和饮料都在画面中。</p></div>
+      <img id="preview" class="preview" alt="餐食预览">
+      <button id="submit" class="button secondary" type="submit" {% if not meal_llm_ready %}disabled{% endif %}>分析这餐并保存</button>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
+  <section id="result" class="card" hidden>
+    <span id="confidence" class="tag"></span><h2 id="summaryText" style="margin-top:10px"></h2><div id="totals" class="target"></div>
+    <h3>识别到的食物</h3><div id="foods"></div><h3>这餐做得好的地方</h3><ul id="good"></ul><h3>具体怎么改</h3><ul id="improvements"></ul><h3>为什么这样改</h3><ul id="reasons"></ul><h3>下一餐直接照着吃</h3><p id="nextMeal"></p><h3>照片无法确认的内容</h3><ul id="uncertainty"></ul><p id="privacy" class="privacy"></p>
+  </section>
+</main>
+<script>
+  const lanToken=new URLSearchParams(location.search).get('token');
+  function withToken(url){if(!lanToken)return url;return url+(url.includes('?')?'&':'?')+'token='+encodeURIComponent(lanToken)}
+  if(lanToken)document.querySelectorAll('a[href^="/"]').forEach(link=>{link.href=withToken(link.getAttribute('href'))});
+  const localNow=new Date();localNow.setMinutes(localNow.getMinutes()-localNow.getTimezoneOffset());document.getElementById('eatenAt').value=localNow.toISOString().slice(0,16);
+  const quickForm=document.getElementById('quickForm'),quickButton=document.getElementById('quickSubmit'),quickStatus=document.getElementById('quickStatus');
+  quickForm.addEventListener('submit',async event=>{event.preventDefault();quickButton.disabled=true;quickStatus.className='status';quickStatus.style.display='block';quickStatus.textContent='保存中…';const raw=Object.fromEntries(new FormData(quickForm));['estimated_kcal','protein_g','carb_g','fat_g'].forEach(key=>{raw[key]=raw[key]===''?null:Number(raw[key])});try{const response=await fetch(withToken('/api/meals/quick'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(raw)}),data=await response.json();if(!response.ok)throw new Error(data.detail||'保存失败');quickStatus.textContent='已保存：'+data.meal_type+' · '+data.description+'。正在刷新今日计划…';document.getElementById('description').value='';document.getElementById('notes').value='';setTimeout(()=>window.location.reload(),900);}catch(error){quickStatus.className='status error';quickStatus.textContent=error.message}finally{quickButton.disabled=false}});
+
+  const image=document.getElementById('image'),preview=document.getElementById('preview'),form=document.getElementById('mealForm'),button=document.getElementById('submit'),statusBox=document.getElementById('status');
+  image.addEventListener('change',()=>{const file=image.files[0];if(file){preview.src=URL.createObjectURL(file);preview.style.display='block'}});
+  function fillList(id,items){const list=document.getElementById(id);list.textContent='';(items||[]).forEach(item=>{const li=document.createElement('li');li.textContent=item;list.appendChild(li)})}
+  form.addEventListener('submit',async event=>{event.preventDefault();button.disabled=true;button.textContent='正在识别食物…';statusBox.className='status';statusBox.style.display='block';statusBox.textContent='图片分析通常需要十几秒，请不要关闭页面。';try{const response=await fetch(withToken('/api/meals/analyze'),{method:'POST',body:new FormData(form)}),data=await response.json();if(!response.ok)throw new Error(data.detail||'分析失败');const analysis=data.analysis||{},totals=analysis.meal_total||{};document.getElementById('result').hidden=false;document.getElementById('confidence').textContent='照片判断置信度：'+(analysis.confidence||'未知');document.getElementById('summaryText').textContent=analysis.summary||'餐食分析';document.getElementById('totals').textContent=`整餐估算：${totals.kcal_range||'热量未知'}；蛋白质${totals.protein_g_range||'未知'}；碳水化合物${totals.carb_g_range||'未知'}；脂肪${totals.fat_g_range||'未知'}`;const foods=document.getElementById('foods');foods.textContent='';(analysis.foods||[]).forEach(food=>{const item=document.createElement('div');item.className='food';const name=document.createElement('strong');name.textContent=`${food.name||'食物'} · ${food.portion||'份量不明'}`;const numbers=document.createElement('div');numbers.className='numbers';numbers.textContent=`${food.kcal_range||''}；蛋白质${food.protein_g_range||''}；碳水化合物${food.carb_g_range||''}；脂肪${food.fat_g_range||''}`;item.append(name,numbers);foods.appendChild(item)});fillList('good',analysis.good_points);fillList('improvements',analysis.improvements);fillList('reasons',analysis.science_reason);fillList('uncertainty',analysis.uncertainty);document.getElementById('nextMeal').textContent=analysis.next_meal||'暂无建议';document.getElementById('privacy').textContent=data.privacy||'';statusBox.textContent='分析完成，文字结果已保存。';document.getElementById('result').scrollIntoView({behavior:'smooth'})}catch(error){statusBox.className='status error';statusBox.textContent=error.message}finally{button.disabled=false;button.textContent='分析这餐并保存'}});
+</script>
+</body>
+</html>

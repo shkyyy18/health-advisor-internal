@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>健康助手 · 数据驱动减脂</title>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">H</div>
+      <div class="brand-title">
+        <h1>健康助手</h1>
+        <p>睡眠 × 身体指标 × 运动 × 饮食 · 联动判断</p>
+      </div>
+    </div>
+    <div>
+      <div class="toolbar">
+        <a class="btn btn-secondary" href="/mobile">手机记录</a>
+        <button class="btn btn-secondary" onclick="syncHealth(event)" data-url="/api/sync/xiaomi">刷新健康数据</button>
+        {% if connected %}<button class="btn btn-secondary" onclick="syncStrava(event)" data-url="/api/sync/strava">同步 Strava</button>{% else %}<a class="btn btn-secondary" href="/connect/strava">连接 Strava</a>{% endif %}
+      </div>
+      <div class="status-bar">快照时间：{{ snapshot_time }}</div>
+      <div id="sync-status" class="status-bar"></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: Today decision + key metrics -->
+    <section class="hero">
+      <article class="card hero-main">
+        <div>
+          <span id="coach-status" class="coach-status {{ 'warn' if summary.daily_coaching.status in ['恢复不足','恢复优先'] else '' }}">{{ summary.daily_coaching.status }}</span>
+          <h2 class="coach-headline">{{ summary.daily_coaching.headline }}</h2>
+          <p class="coach-confidence">综合置信度：{{ summary.daily_coaching.confidence }} · {{ summary.method_version }}</p>
+        </div>
+
+        <ul class="action-list">
+          {% for item in summary.daily_coaching.linked_actions[:3] %}
+          <li>
+            <span class="action-icon">{% if item.area == '睡眠' %}💤{% elif item.area == '饮食' %}🍽️{% elif item.area == '运动' %}🚴{% elif item.area == '恢复' %}🌿{% else %}📌{% endif %}</span>
+            <div class="action-text">
+              <strong>{{ item.area }} · {{ item.action }}</strong>
+              <span>{{ item.because }}</span>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+
+        {% if summary.daily_coaching.experiment %}
+        <div style="background: var(--purple-bg); color: var(--purple); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;">
+          <strong>单变量观察实验：</strong>{{ summary.daily_coaching.experiment }}
+        </div>
+        {% endif %}
+      </article>
+
+      <div class="hero-side">
+        <div class="card metric-card">
+          <div>
+            <div class="metric-label">📊 恢复状态</div>
+            <div class="metric-value" style="font-size: 22px;">{{ summary.readiness.status }}</div>
+          </div>
+          <div class="metric-delta neutral">置信度 {{ summary.readiness.confidence }}</div>
+        </div>
+
+        <div class="card metric-card">
+          <div>
+            <div class="metric-label">⚖️ 最近体重</div>
+            <div class="metric-value">{{ "%.1f"|format(summary.body_composition.latest_weight_kg) if summary.body_composition.latest_weight_kg else '—' }}<small>kg</small></div>
+          </div>
+          <div class="metric-delta {{ 'down' if summary.body_composition.weight_day_change_kg is not none and summary.body_composition.weight_day_change_kg < 0 else 'up' if summary.body_composition.weight_day_change_kg is not none and summary.body_composition.weight_day_change_kg > 0 else 'neutral' }}">
+            {% if summary.body_composition.weight_day_change_kg is not none %}{{ "%+.1f"|format(summary.body_composition.weight_day_change_kg) }} kg{% else %}暂无比较{% endif %}
+          </div>
+        </div>
+
+        <div class="card metric-card">
+          <div>
+            <div class="metric-label">😴 昨夜睡眠</div>
+            <div class="metric-value">{{ summary.sleep.latest_hours if summary.sleep.latest_hours is not none else '—' }}<small>h</small></div>
+          </div>
+          <div class="metric-delta {{ 'up' if summary.sleep.latest_hours is not none and summary.sleep.latest_hours >= 7 else 'warn' if summary.sleep.latest_hours is not none else 'neutral' }}">
+            {{ summary.sleep.severity }}
+          </div>
+        </div>
+
+        <div class="card metric-card">
+          <div>
+            <div class="metric-label">🚴 近7天运动</div>
+            <div class="metric-value">{{ summary.training.minutes }}<small>min</small></div>
+          </div>
+          <div class="metric-delta neutral">{{ summary.training.distance_km }} km · {{ summary.training.elevation_m }} m</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- North-star goal: body fat & weight back to normal range -->
+    {% if summary.body_composition.stage_goal %}
+    {% set goal = summary.body_composition.stage_goal %}
+    <section class="card" style="margin-top: 20px;">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">阶段目标：体脂与体重回归正常</h2>
+          <p class="card-subtitle">{{ goal.pace_note }}</p>
+        </div>
+        <span class="coach-status">{{ goal.progress_pct }}%</span>
+      </div>
+      <div style="background: var(--info-bg); border-radius: var(--radius-sm); height: 8px; margin-bottom: 14px; overflow: hidden;">
+        <div style="background: var(--info); height: 100%; width: {{ goal.progress_pct }}%;"></div>
+      </div>
+      <div class="workout-meta" style="flex-wrap: wrap;">
+        <span class="coach-status">当前 {{ goal.current_weight_kg }}kg · 体脂{{ goal.current_body_fat_pct }}%</span>
+        <span class="coach-status">阶段一 ≤{{ goal.stage1_body_fat_pct }}% → 约{{ goal.stage1_weight_kg }}kg{% if goal.remaining_kg > 0 %}（再减{{ goal.remaining_kg }}kg，约{{ goal.eta_weeks }}）{% else %}（{{ goal.eta_weeks }}）{% endif %}</span>
+        <span class="coach-status">正常区间 {{ goal.final_body_fat_range }} → {{ goal.final_weight_range_kg }}kg</span>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Trend charts -->
+    <section class="grid-3">
+      <div class="card sparkline-card">
+        <div class="sparkline-header">
+          <div>
+            <h3 class="sparkline-title">体重趋势</h3>
+            <div class="sparkline-value" id="weight-current">—</div>
+          </div>
+          <span class="sparkline-trend neutral" id="weight-trend">计算中</span>
+        </div>
+        <div class="sparkline-chart" id="weight-chart"><div class="sparkline-empty">暂无数据</div></div>
+      </div>
+
+      <div class="card sparkline-card">
+        <div class="sparkline-header">
+          <div>
+            <h3 class="sparkline-title">体脂趋势</h3>
+            <div class="sparkline-value" id="fat-current">—</div>
+          </div>
+          <span class="sparkline-trend neutral" id="fat-trend">计算中</span>
+        </div>
+        <div class="sparkline-chart" id="fat-chart"><div class="sparkline-empty">暂无数据</div></div>
+      </div>
+
+      <div class="card sparkline-card">
+        <div class="sparkline-header">
+          <div>
+            <h3 class="sparkline-title">睡眠时长</h3>
+            <div class="sparkline-value" id="sleep-current">—</div>
+          </div>
+          <span class="sparkline-trend neutral" id="sleep-trend">计算中</span>
+        </div>
+        <div class="sparkline-chart" id="sleep-chart"><div class="sparkline-empty">暂无数据</div></div>
+      </div>
+    </section>
+
+    <!-- Today detail -->
+    <section class="today-detail">
+      <div class="card workout-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">今日训练：{{ summary.workout.title }}</h2>
+            <p class="card-subtitle">{{ summary.workout.rationale }}</p>
+          </div>
+          <span class="coach-status {{ 'warn' if summary.workout.intensity == '恢复' else '' }}">{{ summary.workout.intensity }}</span>
+        </div>
+        <div class="workout-meta">
+          <span class="coach-status">{{ summary.workout.duration }}</span>
+          <span class="coach-status">{{ summary.workout.readiness }}</span>
+        </div>
+
+        {% if summary.workout.warmup %}
+        <h3 style="font-size:14px;margin:18px 0 10px;color:var(--ink-secondary);">🔥 热身</h3>
+        <div class="workout-section">
+          {% for item in summary.workout.warmup %}
+          <div class="workout-item">
+            <div class="workout-item-name">{{ item.name }}</div>
+            <div class="workout-item-detail">{{ item.detail }}</div>
+            {% if item.guide %}<div style="font-size:13px;color:var(--ink-secondary);line-height:1.6;margin-top:4px;">{{ item.guide }}{% if item.source %} <span style="color:var(--ink-muted);">（出处：{{ item.source }}）</span>{% endif %}</div>{% endif %}
+            <div class="workout-item-meta">⏱️ {{ item.duration }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if summary.workout.main %}
+        <h3 style="font-size:14px;margin:18px 0 10px;color:var(--ink-secondary);">💪 主训练</h3>
+        <div class="workout-section">
+          {% for item in summary.workout.main %}
+          <div class="workout-item">
+            <div class="workout-item-name">{{ item.name }}</div>
+            <div class="workout-item-detail">{{ item.detail }}</div>
+            {% if item.guide %}<div style="font-size:13px;color:var(--ink-secondary);line-height:1.6;margin-top:4px;">{{ item.guide }}{% if item.source %} <span style="color:var(--ink-muted);">（出处：{{ item.source }}）</span>{% endif %}</div>{% endif %}
+            <div class="workout-item-meta">📝 {{ item.sets }}组 × {{ item.reps }}{% if item.rest %} · 组间休息{{ item.rest }}{% endif %}{% if item.note %} · {{ item.note }}{% endif %}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if summary.workout.cooldown %}
+        <h3 style="font-size:14px;margin:18px 0 10px;color:var(--ink-secondary);">❄️ 冷身</h3>
+        <div class="workout-section">
+          {% for item in summary.workout.cooldown %}
+          <div class="workout-item">
+            <div class="workout-item-name">{{ item.name }}</div>
+            <div class="workout-item-detail">{{ item.detail }}</div>
+            {% if item.guide %}<div style="font-size:13px;color:var(--ink-secondary);line-height:1.6;margin-top:4px;">{{ item.guide }}{% if item.source %} <span style="color:var(--ink-muted);">（出处：{{ item.source }}）</span>{% endif %}</div>{% endif %}
+            <div class="workout-item-meta">⏱️ {{ item.duration }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if summary.workout.fallback %}
+        <div class="fallback-box">
+          <strong>状态差时：</strong>{{ summary.workout.fallback }}
+        </div>
+        {% endif %}
+
+        <p style="margin-top: 14px; font-size: 13px; color: var(--ink-muted);"><strong>终止规则：</strong>{{ summary.workout.stop_rule }}</p>
+        {% if summary.workout.sources %}
+        <p style="margin-top: 8px; font-size: 12px; color: var(--ink-muted);"><strong>动作出处：</strong>{% for s in summary.workout.sources %}{{ s }}{% if not loop.last %}；{% endif %}{% endfor %}</p>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">今日营养目标</h2>
+            <p class="card-subtitle">{{ summary.nutrition.energy_target_detail }}</p>
+          </div>
+        </div>
+
+        <div class="workout-meta">
+          <span class="coach-status">{{ summary.nutrition.menu_mode }}</span>
+          <span class="coach-status">今日碳水 {{ summary.nutrition.carb_target_today or summary.nutrition.carb_target_easy }}</span>
+        </div>
+
+        <div style="background: var(--info-bg); color: var(--info); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; margin-bottom: 16px;">
+          <strong>热量、蛋白质像底薪，每天稳定；碳水像绩效，随训练强度变；菜单像菜谱，每天轮换。</strong>今天给你的是「{{ summary.nutrition.menu_variant }}」，属于{{ summary.nutrition.menu_mode }}。明天刷新后菜单会自动换下一套。
+        </div>
+
+        <div class="nutrition-targets">
+          <div class="target-pill">
+            <span class="value">{{ summary.nutrition.energy_target }}</span>
+            <span class="label">热量目标</span>
+          </div>
+          <div class="target-pill">
+            <span class="value">{{ summary.nutrition.protein_target }}</span>
+            <span class="label">蛋白质</span>
+          </div>
+          <div class="target-pill">
+            <span class="value">{{ summary.nutrition.carb_target_today or summary.nutrition.carb_target_easy }}</span>
+            <span class="label">{{ summary.nutrition.carb_target_today_label or '休息日碳水' }}</span>
+          </div>
+        </div>
+
+        <div style="background: var(--warn-bg); color: var(--warn); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; margin-bottom: 16px;">
+          <strong>动态调整：</strong>{{ summary.nutrition.adjustment }}
+        </div>
+
+        <p style="font-size: 13px; color: var(--ink-muted); margin-bottom: 12px;">
+          <strong>今日执行：</strong>{{ summary.nutrition.today }}<br>
+          已记录：{{ summary.nutrition.observed_intake }} · 覆盖 {{ summary.nutrition.logged_days }}/7 天（{{ summary.nutrition.coverage_pct }}%）
+        </p>
+
+        {% if summary.nutrition.daily_menu %}
+        <h3 style="font-size: 14px; margin: 16px 0 8px;">今日菜单 · {{ summary.nutrition.menu_variant }}</h3>
+        <ul style="padding-left: 18px; font-size: 13px; color: var(--ink-secondary); line-height: 1.8;">
+          {% for meal in summary.nutrition.daily_menu %}
+          <li><strong>{{ meal.meal }}：</strong>{{ meal.foods }} <span style="color: var(--ink-muted);">({{ meal.estimate }})</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- Quick log + data gaps -->
+    <section class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">快速记录饮食</h2>
+            <p class="card-subtitle">30 秒记录今天吃了什么，热量不知道就留空</p>
+          </div>
+        </div>
+
+        <div id="meal-reminder" style="display:none;">
+          <div style="background: var(--warn-bg); color: var(--warn); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; margin-bottom: 14px;">
+            <strong>⏰ 今天还没记录饮食</strong>
+            <p style="margin: 6px 0 0; color: var(--warn);">拍照或写一句话都行，先完成记录再追求完美。</p>
+            <button class="btn btn-secondary" id="enable-notifications" style="margin-top: 10px; font-size: 12px; padding: 6px 10px;">开启用餐提醒</button>
+          </div>
+        </div>
+
+        <div class="log-tabs">
+          <button type="button" class="log-tab active" data-tab="text" onclick="switchLogTab('text')">✏️ 文字记录</button>
+          <button type="button" class="log-tab" data-tab="photo" onclick="switchLogTab('photo')">📷 拍照记录</button>
+        </div>
+
+        <form class="quick-log-form" id="quick-log-form" onsubmit="saveQuickMeal(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label>餐次</label>
+              <select name="meal_type" required>
+                <option value="早餐">早餐</option>
+                <option value="午餐" selected>午餐</option>
+                <option value="晚餐">晚餐</option>
+                <option value="加餐">加餐</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>时间</label>
+              <input type="datetime-local" name="eaten_at" id="meal-time">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>吃了什么（必填）</label>
+            <textarea name="description" placeholder="例如：米饭1碗、青椒肉丝、炒菠菜" required></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>热量（kcal）</label>
+              <input type="number" name="estimated_kcal" min="0" placeholder="可选">
+            </div>
+            <div class="form-group">
+              <label>蛋白质（g）</label>
+              <input type="number" name="protein_g" min="0" step="0.1" placeholder="可选">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>碳水（g）</label>
+              <input type="number" name="carb_g" min="0" step="0.1" placeholder="可选">
+            </div>
+            <div class="form-group">
+              <label>脂肪（g）</label>
+              <input type="number" name="fat_g" min="0" step="0.1" placeholder="可选">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="log-submit">保存记录</button>
+          </div>
+          <div id="log-status" style="font-size: 13px; color: var(--ink-muted); margin-top: 8px;"></div>
+        </form>
+
+        <form class="photo-log-form" id="photo-log-form" onsubmit="savePhotoMeal(event)" style="display:none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label>餐次</label>
+              <select name="meal_type" required>
+                <option value="早餐">早餐</option>
+                <option value="午餐" selected>午餐</option>
+                <option value="晚餐">晚餐</option>
+                <option value="加餐">加餐</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>照片</label>
+            <div class="photo-upload">
+              <input type="file" name="image" accept="image/jpeg,image/png,image/webp" required>
+              <p class="photo-upload-hint">建议从正上方拍，主食、肉、蔬菜、饮料都在画面里</p>
+            </div>
+            <img id="photo-preview" class="photo-preview" alt="餐食预览" style="display:none;">
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="photo-log-submit">分析并保存</button>
+          </div>
+          <div id="photo-log-status" style="font-size: 13px; color: var(--ink-muted); margin-top: 8px;"></div>
+
+          <div id="photo-result" class="photo-result" style="display:none;">
+            <h4 style="margin: 14px 0 8px; font-size: 14px;">识别结果</h4>
+            <div id="photo-summary" style="font-weight: 600; margin-bottom: 8px;"></div>
+            <div id="photo-totals" style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 10px;"></div>
+            <ul id="photo-foods" style="padding-left: 18px; font-size: 13px; color: var(--ink-secondary); line-height: 1.8;"></ul>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">数据透明度</h2>
+            <p class="card-subtitle">缺失的数据会降低建议可信度</p>
+          </div>
+        </div>
+        <ul class="gap-list">
+          {% for item in summary.data_gaps[:6] %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        {% if summary.nutrition.logging_confidence == '低' %}
+        <div style="margin-top: 14px; padding: 12px; background: var(--warn-bg); color: var(--warn); border-radius: var(--radius-sm); font-size: 13px;">
+          <strong>饮食记录覆盖度低。</strong> 连续记录 7 天后，营养建议会更精准。
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- Personal patterns mined from the user's own data -->
+    {% if summary.personal_patterns and (summary.personal_patterns.findings or summary.personal_patterns.weekly_experiment) %}
+    <section class="card" style="margin-top: 20px;">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">你的规律（来自你自己的数据）</h2>
+          <p class="card-subtitle">{{ summary.personal_patterns.data_note }}</p>
+        </div>
+      </div>
+      {% if summary.personal_patterns.headline %}
+      <div style="background: var(--info-bg); color: var(--info); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; margin-bottom: 16px;">
+        <strong>{{ summary.personal_patterns.headline }}</strong>
+      </div>
+      {% endif %}
+      {% if summary.personal_patterns.findings %}
+      <ul class="gap-list">
+        {% for f in summary.personal_patterns.findings %}
+        <li><strong>{{ f.topic }}：</strong>{{ f.finding }} <span style="color: var(--ink-muted);">（样本 {{ f.n }} · {{ f.confidence }} · {{ f.caveat }}）</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if summary.personal_patterns.custom_targets %}
+      <h3 style="font-size: 14px; margin: 16px 0 8px;">为你定制的目标（专家建议 × 你的数据）</h3>
+      <ul style="padding-left: 18px; font-size: 13px; color: var(--ink-secondary); line-height: 1.8;">
+        {% for t in summary.personal_patterns.custom_targets %}
+        <li><strong>{{ t.area }}：</strong>{{ t.target }}<br>
+          <span style="color: var(--ink-muted);">你的数据：{{ t.your_data }} ｜ 专家基准：{{ t.expert_baseline }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if summary.personal_patterns.weekly_experiment %}
+      {% set exp = summary.personal_patterns.weekly_experiment %}
+      <div style="margin-top: 16px; border: 1px solid var(--info); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;">
+        <strong>{{ exp.title }}</strong>
+        <ul style="padding-left: 18px; margin-top: 8px; line-height: 1.8; color: var(--ink-secondary);">
+          <li><strong>变量：</strong>{{ exp.variable }}</li>
+          <li><strong>保持不变：</strong>{{ exp.keep_constant }}</li>
+          <li><strong>测量：</strong>{{ exp.measure }}</li>
+          <li><strong>判据：</strong>{{ exp.success }}</li>
+          <li><strong>你需要做的：</strong>{% for p in exp.your_part %}{{ p }}{% if not loop.last %}；{% endif %}{% endfor %}</li>
+        </ul>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <!-- Recent activities -->
+    <section class="card" style="margin-top: 20px;">
+      <div class="card-header">
+        <h2 class="card-title">最近活动</h2>
+      </div>
+      {% if activities %}
+      <div style="overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>活动</th>
+              <th>距离</th>
+              <th>时长</th>
+              <th>平均心率</th>
+              <th>平均功率</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in activities %}
+            <tr>
+              <td>{{ a.start_date[:10] }}</td>
+              <td>{{ a.name }}</td>
+              <td>{{ "%.1f"|format((a.distance or 0)/1000) }} km</td>
+              <td>{{ ((a.moving_time or 0)/60)|round|int }} min</td>
+              <td>{{ a.average_heartrate|round|int if a.average_heartrate else '—' }}</td>
+              <td>{{ a.average_watts|round|int if a.average_watts else '—' }}{% if a.average_watts %} W{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">暂无活动记录。连接 Strava 或手动同步。</div>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>{{ summary.disclaimer }}</p>
+    <p style="margin-top: 6px;">{{ summary.method_note }}</p>
+  </footer>
+</div>
+
+<script>
+  window.__DASHBOARD_DATA = {{ dashboard_data | default({}) | tojson }};
+</script>
+<script src="/static/js/dashboard.js"></script>
+</body>
+</html>

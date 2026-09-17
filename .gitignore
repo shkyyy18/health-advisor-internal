@@ -1,0 +1,38 @@
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+data/
+logs/
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Downloaded Hyperice tutorial videos (large binaries, re-downloadable)
+hyperice/videos/
+
+/private/
+/local/
+/workspace/
+*.bundle
+/健康顾问-项目记忆.md
