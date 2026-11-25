@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+import json
 
 import httpx
 import pytest
@@ -85,4 +86,55 @@ def test_analyze_meal_photo_requires_meal_llm_key(monkeypatch, fake_client):
 
     with pytest.raises(MealAnalysisError, match="MEAL_LLM_API_KEY"):
         asyncio.run(analyze_meal_photo(b"fake-image", "image/jpeg", "午餐", {}))
+    assert fake_client.instances == []
+
+
+@pytest.mark.parametrize('payload', [
+    None, [], 'not-an-object', {}, {'output': None}, {'output': {}},
+    {'output': [{'content': None}]}, {'output': [{'content': {}}]},
+    {'output': [{'content': []}]},
+])
+def test_malformed_response_becomes_meal_analysis_error(monkeypatch, fake_client, payload):
+    _settings_with_key(monkeypatch)
+
+    async def post(self, *args, **kwargs):
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(fake_client, 'post', post)
+    with pytest.raises(MealAnalysisError):
+        asyncio.run(analyze_meal_photo(b'fake-image', 'image/jpeg', 'test', {}))
+
+
+def test_non_json_response_becomes_meal_analysis_error(monkeypatch, fake_client):
+    _settings_with_key(monkeypatch)
+
+    def invalid_json(self):
+        raise json.JSONDecodeError('synthetic upstream page', '<html>', 0)
+
+    monkeypatch.setattr(_FakeResponse, 'json', invalid_json)
+    with pytest.raises(MealAnalysisError, match='JSON'):
+        asyncio.run(analyze_meal_photo(b'fake-image', 'image/jpeg', 'test', {}))
+
+
+def test_reasoning_item_without_content_preserves_valid_text(monkeypatch, fake_client):
+    _settings_with_key(monkeypatch)
+
+    async def post(self, *args, **kwargs):
+        return _FakeResponse({'output': [
+            {'type': 'reasoning', 'content': None},
+            {'type': 'message', 'content': [
+                {'type': 'output_text', 'text': '{"summary":"synthetic meal"}'},
+            ]},
+        ]})
+
+    monkeypatch.setattr(fake_client, 'post', post)
+    result = asyncio.run(analyze_meal_photo(b'fake-image', 'image/jpeg', 'test', {}))
+    assert result['summary'] == 'synthetic meal'
+
+
+@pytest.mark.parametrize('field', ['meal_llm_base_url', 'meal_llm_model'])
+def test_incomplete_configuration_does_not_call_api(monkeypatch, fake_client, field):
+    _settings_with_key(monkeypatch, **{field: ' '})
+    with pytest.raises(MealAnalysisError):
+        asyncio.run(analyze_meal_photo(b'fake-image', 'image/jpeg', 'test', {}))
     assert fake_client.instances == []

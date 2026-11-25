@@ -54,25 +54,12 @@ def test_json_fence_parser():
     assert _json_from_text('```json\n{"confidence":"中"}\n```')["confidence"] == "中"
 
 
-def test_dashboard_renders_week_comparison_and_concrete_food_plan():
-    body = [
-        {"measured_at": "2026-07-10T08:00:00+08:00", "weight_kg": 74, "body_fat_pct": 27}
-    ]
-    summary = build_summary([], [], body, profile={"sex": "男"})
-    html = main.templates.env.get_template("index.html").render(
-        summary=summary, activities=[], connected=False
-    )
-    assert "体重趋势" in html
-    assert "体脂趋势" in html
-    assert "睡眠时长" in html
-    assert "快速记录饮食" in html
-    assert "今日训练" in html
-    assert "今日营养目标" in html
-    assert "数据透明度" in html
-    assert "最近活动" in html
-    assert 'window.__DASHBOARD_DATA' in html
-    assert '/static/css/dashboard.css' in html
-    assert '/static/js/dashboard.js' in html
+def test_retired_dashboard_does_not_expose_old_data():
+    client = TestClient(main.app)
+    assert client.get("/").status_code == 410
+    assert client.get("/api/dashboard-data").status_code == 410
+    assert client.get("/static/css/dashboard.css").status_code == 404
+
 
 def test_meal_upload_uses_lunch_when_meal_type_is_omitted(monkeypatch):
     fake = {
@@ -147,23 +134,10 @@ def test_nutrition_summary_exposes_recent_logging_coverage():
     assert result["logging_confidence"] == "\u4e2d"
 
 
-def test_mobile_dashboard_renders_daily_coach_and_rotating_menu():
-    now = datetime(2026, 7, 16, 8, 0, tzinfo=timezone.utc)
-    summary = build_summary([], [], [], now=now)
-
-    html = main.templates.env.get_template("mobile.html").render(
-        summary=summary,
-        meal_llm_ready=False,
-        meal_llm_model="test-model",
-    )
-
-    assert "今日联动教练" in html
-    assert "运动：" in html
-    assert "饮食：" in html
-    assert "恢复：" in html
-    assert "测量：" in html
-    assert "今天怎么吃" in html
-    assert summary["nutrition"]["menu_variant"] in html
-    assert summary["nutrition"]["daily_menu"][0]["foods"] in html
+def test_mobile_is_only_a_meal_recording_form():
+    html = TestClient(main.app).get("/mobile").text
+    assert "30秒手工记录" in html
     assert 'aria-live="polite"' in html
-    assert "正在刷新今日计划" in html
+    assert "今日联动教练" not in html
+    assert "今天怎么吃" not in html
+    assert "返回看板" not in html

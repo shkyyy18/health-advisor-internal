@@ -118,14 +118,11 @@ def test_xiaomi_endpoint_returns_actionable_configuration_error(monkeypatch):
     assert response.json()["detail"] == "请先扫码登录"
 
 
-def test_dashboard_uses_public_xiaomi_sync_endpoint():
+def test_retired_dashboard_does_not_offer_sync_controls():
     response = TestClient(main.app).get("/")
-    assert response.status_code == 200
-    assert "/api/sync/xiaomi" in response.text
-    assert "syncLegacy" not in response.text
-    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"
-    assert response.headers["pragma"] == "no-cache"
-    assert response.headers["expires"] == "0"
+    assert response.status_code == 410
+    assert "/api/sync/xiaomi" not in response.text
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_mobile_dashboard_disables_cache_headers():

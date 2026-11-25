@@ -31,13 +31,13 @@ pytestmark = pytest.mark.skipif(
 def test_hidden_launchers_use_venv_capture_logs_and_propagate_exit(
     tmp_path, launcher, task, target, exit_code
 ):
-    project = tmp_path / "synthetic project with spaces"
+    project = tmp_path / "synthetic 中文 project with spaces"
     scripts = project / "scripts"
     scripts.mkdir(parents=True)
     venv.EnvBuilder(with_pip=False).create(project / ".venv")
     shutil.copyfile(ROOT / "scripts" / launcher, scripts / launcher)
     (scripts / target).write_text(
-        "import sys\nprint('synthetic stdout', flush=True)\n"
+        "import sys\nprint('synthetic stdout 中文日志', flush=True)\n"
         "print('synthetic stderr', file=sys.stderr, flush=True)\n"
         "assert sys.prefix != sys.base_prefix, 'launcher ignored local venv'\n"
         f"sys.exit({exit_code})\n",
@@ -51,15 +51,18 @@ def test_hidden_launchers_use_venv_capture_logs_and_propagate_exit(
         errors="replace",
         timeout=30,
         creationflags=subprocess.CREATE_NO_WINDOW,
+        env={**os.environ, "PYTHONIOENCODING":"gbk"},
     )
     assert result.returncode == exit_code, result.stdout + result.stderr
     log = (project / "logs" / f"{task}.last.log").read_text(encoding="utf-8")
     assert "synthetic stdout" in log and "synthetic stderr" in log
+    assert "中文日志" in log
     report = json.loads(
         (project / "logs" / "task-results" / f"{task}.json").read_text(encoding="utf-8")
     )
     assert report["exit_code"] == exit_code
     assert report["console_bytes"] > 0
+    assert Path(report["console_log"]) == project / "logs" / f"{task}.last.log"
 
 
 def test_powershell_entrypoints_parse_without_execution():
@@ -87,36 +90,6 @@ def test_powershell_entrypoints_parse_without_execution():
         assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("exit_code", [0, 7])
-def test_dashboard_batch_uses_venv_and_preserves_backend_exit(tmp_path, exit_code):
-    project = tmp_path / "synthetic dashboard with spaces"
-    scripts = project / "scripts"
-    scripts.mkdir(parents=True)
-    venv.EnvBuilder(with_pip=False).create(project / ".venv")
-    shutil.copyfile(ROOT / "scripts" / "healthboard.bat", scripts / "healthboard.bat")
-    (scripts / "open_dashboard.py").write_text(
-        "# No browser or network in tests.\n", encoding="utf-8"
-    )
-    # The port probe must not connect to a real service or affect its state.
-    (project / "socket.py").write_text(
-        "class socket:\n    def connect_ex(self, address): return 1\n", encoding="utf-8"
-    )
-    (project / "uvicorn.py").write_text(
-        "import sys\nassert sys.prefix != sys.base_prefix\n"
-        "print('synthetic backend', flush=True)\n"
-        f"sys.exit({exit_code})\n",
-        encoding="utf-8",
-    )
-    result = subprocess.run(
-        ["cmd.exe", "/d", "/c", str(scripts / "healthboard.bat")],
-        cwd=tmp_path,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-    )
-    assert result.returncode == exit_code, result.stdout + result.stderr
-    assert "synthetic backend" in (project / "logs" / "app.out.log").read_text(
-        encoding="utf-8"
-    )
+def test_retired_dashboard_launchers_are_removed():
+    for name in ["healthboard.bat", "run_healthboard.vbs", "open_dashboard.py"]:
+        assert not (ROOT / "scripts" / name).exists()

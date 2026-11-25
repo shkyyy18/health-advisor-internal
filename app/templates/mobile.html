@@ -20,42 +20,11 @@
   <header>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
       <h1>快速记录饮食</h1>
-      <a href="/" style="font-size:14px;font-weight:600;color:var(--brand);">← 返回看板</a>
     </div>
     <p class="muted">先保证每天有记录，再逐步提高估算精度。没有图片接口也可以用几十秒完成手工记录。</p>
     <p class="muted">快照时间：{{ snapshot_time }}</p>
   </header>
 
-  <section class="card coach">
-    <div class="coach-title">
-      <div>
-        <span class="pill">{{ summary.daily_coaching.status }}</span>
-        <h2 style="margin-top:10px">今日联动教练</h2>
-      </div>
-      <span class="pill">置信度：{{ summary.daily_coaching.confidence }}</span>
-    </div>
-    <div class="headline">{{ summary.daily_coaching.headline }}</div>
-    <div>
-      {% for item in summary.daily_coaching.linked_actions %}
-      <div class="action"><strong>{{ item.area }}：</strong>{{ item.action }}<div class="muted">{{ item.because }}</div></div>
-      {% endfor %}
-    </div>
-    <p class="muted">{{ summary.daily_coaching.next_review }}</p>
-  </section>
-
-  <section class="card">
-    <h2>今天怎么吃</h2>
-    <div class="target"><strong>蛋白质：{{ summary.nutrition.protein_target }}</strong><br>热量：{{ summary.nutrition.energy_target }}</div>
-    <div class="adjustment"><strong>动态调整：</strong>{{ summary.nutrition.adjustment }}</div>
-    <p>{{ summary.nutrition.today_food_goal }}</p>
-    <h3>{{ summary.nutrition.menu_mode }} · {{ summary.nutrition.menu_variant }}</h3>
-    <ul class="menu">
-      {% for meal in summary.nutrition.daily_menu %}
-      <li><strong>{{ meal.meal }}：</strong>{{ meal.foods }}<div class="muted">{{ meal.estimate }} · {{ meal.why }}</div></li>
-      {% endfor %}
-    </ul>
-    <p class="muted">整日估算：{{ summary.nutrition.sample_day_total }}。近7天已记录 {{ summary.nutrition.logged_days }}/7 天（{{ summary.nutrition.coverage_pct }}%），数据置信度{{ summary.nutrition.logging_confidence }}。</p>
-  </section>
   <section class="card">
     <h2>30秒手工记录</h2>
     <p class="muted">食物描述是必填项；热量和三大营养素不知道就留空，不要为了“完整”而编造数字。</p>
@@ -101,7 +70,7 @@
   if(lanToken)document.querySelectorAll('a[href^="/"]').forEach(link=>{link.href=withToken(link.getAttribute('href'))});
   const localNow=new Date();localNow.setMinutes(localNow.getMinutes()-localNow.getTimezoneOffset());document.getElementById('eatenAt').value=localNow.toISOString().slice(0,16);
   const quickForm=document.getElementById('quickForm'),quickButton=document.getElementById('quickSubmit'),quickStatus=document.getElementById('quickStatus');
-  quickForm.addEventListener('submit',async event=>{event.preventDefault();quickButton.disabled=true;quickStatus.className='status';quickStatus.style.display='block';quickStatus.textContent='保存中…';const raw=Object.fromEntries(new FormData(quickForm));['estimated_kcal','protein_g','carb_g','fat_g'].forEach(key=>{raw[key]=raw[key]===''?null:Number(raw[key])});try{const response=await fetch(withToken('/api/meals/quick'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(raw)}),data=await response.json();if(!response.ok)throw new Error(data.detail||'保存失败');quickStatus.textContent='已保存：'+data.meal_type+' · '+data.description+'。正在刷新今日计划…';document.getElementById('description').value='';document.getElementById('notes').value='';setTimeout(()=>window.location.reload(),900);}catch(error){quickStatus.className='status error';quickStatus.textContent=error.message}finally{quickButton.disabled=false}});
+  quickForm.addEventListener('submit',async event=>{event.preventDefault();quickButton.disabled=true;quickStatus.className='status';quickStatus.style.display='block';quickStatus.textContent='保存中…';const raw=Object.fromEntries(new FormData(quickForm));['estimated_kcal','protein_g','carb_g','fat_g'].forEach(key=>{raw[key]=raw[key]===''?null:Number(raw[key])});try{const response=await fetch(withToken('/api/meals/quick'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(raw)}),data=await response.json();if(!response.ok)throw new Error(data.detail||'保存失败');quickStatus.textContent='已保存：'+data.meal_type+' · '+data.description+'。记录已更新…';document.getElementById('description').value='';document.getElementById('notes').value='';setTimeout(()=>window.location.reload(),900);}catch(error){quickStatus.className='status error';quickStatus.textContent=error.message}finally{quickButton.disabled=false}});
 
   const image=document.getElementById('image'),preview=document.getElementById('preview'),form=document.getElementById('mealForm'),button=document.getElementById('submit'),statusBox=document.getElementById('status');
   image.addEventListener('change',()=>{const file=image.files[0];if(file){preview.src=URL.createObjectURL(file);preview.style.display='block'}});

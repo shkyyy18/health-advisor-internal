@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import subprocess
 import sys
@@ -19,7 +18,7 @@ DB_PATH = PROJECT_ROOT / "data" / "health.db"
 OUT_DIR = PROJECT_ROOT / "output" / "recovery"
 LOG_DIR = PROJECT_ROOT / "logs"
 TOAST_PS1 = PROJECT_ROOT / "scripts" / "show_toast.ps1"
-PAGE_URL = os.getenv("HEALTH_RECOVERY_PAGE_URL", "http://127.0.0.1:8000/static/hypervolt.html")
+PAGE_URL = "http://192.168.18.104:8000/static/hypervolt.html"
 
 # sport_type -> (页面流程 key, 流程名, 重点)
 ROUTINE_MAP = {
@@ -112,7 +111,7 @@ def build_guide(acts: list[dict]) -> tuple[str, str]:
         "- 疼痛即停：出现任何尖锐疼痛立即停止。",
         "- 只打肌肉，避开骨头、关节、脊柱、颈前侧、膝盖正反面。",
         "- 每部位不超过 2 分钟，缓慢移动不要定点死压。",
-        "- 有伤病或处于康复期时，请先咨询医疗专业人员；通用流程不能替代个体化康复方案。",
+        "- 右膝康复期：避开右膝周围，只放松大腿/小腿肌肉中段；膝痛未除前遵医嘱。",
         "- 出处：Hyperice 官方使用指引 + ACSM 冷身原则 + Mayo Clinic 恢复指南。",
     ]
     total_min = sum(round((a.get("moving_time") or 0) / 60) for a in acts)
@@ -142,6 +141,9 @@ def notify(text: str) -> None:
 
 
 def main() -> int:
+    if (DB_PATH.parent / "current_plan" / "state.json").exists():
+        log("旧放松方案已撤销；不再自动生成旧指导。")
+        return 0
     acts = todays_activities()
     if not acts:
         log("no activity today, skip")

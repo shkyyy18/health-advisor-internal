@@ -27,20 +27,32 @@ def validate_meal_image(image: bytes, content_type: str) -> None:
         raise MealAnalysisError("图片不能超过8MB（兆字节），请在手机相册中压缩后再上传。")
 
 
-def _extract_output_text(payload: dict[str, Any]) -> str:
+def _extract_output_text(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        raise MealAnalysisError("图片分析接口响应格式异常，请稍后重试。")
     if isinstance(payload.get("output_text"), str):
         return payload["output_text"]
+    output = payload.get("output")
+    if not isinstance(output, list):
+        raise MealAnalysisError("图片分析接口未返回有效文本，请稍后重试。")
     chunks: list[str] = []
-    for item in payload.get("output", []):
+    for item in output:
         if not isinstance(item, dict):
             continue
-        for content in item.get("content", []):
+        contents = item.get("content")
+        if contents is None:
+            continue
+        if not isinstance(contents, list):
+            raise MealAnalysisError("图片分析接口响应格式异常，请稍后重试。")
+        for content in contents:
             if (
                 isinstance(content, dict)
                 and content.get("type") == "output_text"
                 and isinstance(content.get("text"), str)
             ):
                 chunks.append(content["text"])
+    if not chunks:
+        raise MealAnalysisError("图片分析接口未返回有效文本，请稍后重试。")
     return "\n".join(chunks)
 
 
@@ -94,6 +106,8 @@ async def analyze_meal_photo(
         raise MealAnalysisError(
             "尚未配置MEAL_LLM_API_KEY（图片分析接口密钥），图片分析暂不可用。"
         )
+    if not settings.meal_llm_base_url.strip() or not settings.meal_llm_model.strip():
+        raise MealAnalysisError("尚未完整配置图片分析接口地址和模型，图片分析暂不可用。")
 
     encoded = base64.b64encode(image).decode("ascii")
     prompt = f"""你是个人运动营养记录助手。分析这张{meal_type or "餐食"}照片，并结合用户目标给出可执行建议。
@@ -136,4 +150,8 @@ JSON结构：{{"summary":"一句话说明构成","foods":[{{"name":"食物","por
     except httpx.HTTPError as exc:
         raise MealAnalysisError("连接图片分析服务失败，请检查网络后重试。") from exc
 
-    return _normalize_analysis(_json_from_text(_extract_output_text(response.json())))
+    try:
+        response_payload = response.json()
+    except (ValueError, UnicodeError) as exc:
+        raise MealAnalysisError("图片分析接口返回的内容不是有效JSON，请稍后重试。") from exc
+    return _normalize_analysis(_json_from_text(_extract_output_text(response_payload)))

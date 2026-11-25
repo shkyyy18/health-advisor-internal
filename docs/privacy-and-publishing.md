@@ -1,11 +1,38 @@
-# Public/private separation and publication gate
+# 健康顾问：公开与个人资料边界
 
-This distribution contains only reviewed generic code, methods, blank templates and explicitly synthetic examples. Original personal working records and the old Git history are not part of this tree.
+用户于 2026-09-17 确认：健康顾问项目可以公开，但用户个人信息不能公开。
 
-Never publish personal background, income or targets, finances, contacts, relationships, health records, private feedback, identity-linked activity, session history, local configuration or model/provider credentials. Removing a name or calling a real record synthetic does not make it publishable.
 
-`private/`, `business/`, `workspace/`, `data/`, local credentials and runtime records must remain local-only. Test with synthetic fixtures. Do not read those directories as part of a publication scan. Do not upload ignored files as a backup or as CI artifacts.
+## 2026-09-17：公开项目与个人资料严格分离
 
-`.publication-manifest.json` records the exact SHA-256 of each reviewed file. The gate checks Git index contents, rejects unknown paths/symlinks/secret patterns, and can verify every reachable commit. A staged unsafe blob cannot be hidden by a clean worktree. A manifest update requires manual review; matching hashes do not prove absence of all personal information.
+本节是用户本次明确确认的发布边界，优先于此前允许发布个人状态、项目记忆或“脱敏案例”的笼统约定。
 
-Run `python scripts/check_publication.py --history` before publishing. Do not import old branches/tags or merge private working history into this clean repository. Use explicit file lists when staging. Automated checks do not replace human review of text and assets.
+- 项目代码、通用方法、模板与明确标注的合成测试可以作为公开候选；这不构成对具体文件或历史版本的自动发布授权。
+- 不公开用户身份、个人背景、履历、收入/收入目标、资产负债、联系方式、私人关系、健康数据、个人偏好/反馈及可关联到用户的个人记录。
+- 禁令同样覆盖项目记忆、STATE、画布、决策日志、实验输入快照、模型输出、研究报告、截图、提交消息与历史版本；不能只检查 private/ 或凭据。
+- 不把删除姓名、改称“用户/创始人”、信息已公开、仓库名含 internal、GitHub secret scanning 通过当作个人信息可发布的依据。
+- 私人原始资料保留在经核实忽略的本地范围，不为清理公开文件删除本地工作记忆；不得将它们作为公开测试夹具或自动上传的备份。
+- .gitignore 不取消已跟踪文件；修改最新版本不清除 Git 历史。已发布资料须另行审查可达历史与其他公开副本。
+- 当前两个仓库的已发布个人资料尚未完成清理。完成前，不执行常规提交/推送/发布来绕过审查，不宣称个人信息已不再公开。
+- 改仓库可见性、重写远端历史和强制推送须获得明确授权；本次确认隐私边界不等于已执行这些操作。
+
+## 当前处置状态
+
+- 本文件记录发布政策，不证明现有仓库或历史已清洁。
+- 已跟踪的个人项目记忆需分离为本地个人记录与公开工程记录；不得直接批量上传。
+- 不读取真实健康数据库、.env、认证文件或向第三方传送它们来做公开性审计。
+- 当前未修改 GitHub 可见性、未提交或推送、未改写历史；隔离与历史清理方案等待明确授权。
+
+### 2026-09-17 分离进展（尚未重新公开）
+
+- 原 GitHub 仓库已设为私有；原项目仍为个人正式工作区，保留个人资料与历史，不作公开发布源。
+- 已在 `D:/AIWork/publishing/` 建立不继承旧历史的本地代码发行候选；候选已通过本地测试和发布检查，尚未设置远程、尚未上传。
+- 不得将本项目旧分支、标签、记忆或历史合并到公开候选。重新公开远程地址仍待确认，不能把“候选测试通过”解释为“旧仓库可以直接公开”。
+- 处理记录：`D:/AIWork/outputs/codex-privacy-remediation-2026-09-17.md`。
+
+
+## 2026-09-17 健康仓库已重建公开（最新状态）
+
+经用户明确授权，旧健康远端已删除，同名新仓库 shkyyy18/health-advisor-internal（ID 1373835436）已以独立、经审查的代码历史公开。公开源为 D:/AIWork/publishing/health-advisor-internal，根提交 9c78d8da583c7df546ba8ef0d42113f6e26d0982。全新远端克隆发布检查通过，104 项测试通过，Python 3.11/3.12/3.13 CI 全部成功，匿名访问已验证。
+
+原个人工作区 D:/AIWork/projects/health-advisor-internal 保留个人资料及旧历史，不是公开发布源；origin 普通推送已禁用，不得解除保护后直接推送旧历史。后续更新只从公开工作区经人工审查和发布门禁后发布。商业远端仍私有，本次未修改。此前“待授权/尚未公开”的健康状态已由本节取代；不据此宣称第三方历史副本或缓存已消除。详见 D:/AIWork/outputs/health-github-rebuild-2026-09-17.md。

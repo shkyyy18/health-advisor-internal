@@ -22,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from app.analytics import build_summary
+from app.active_plan import load_active_plan, reviewed_summary
 from app.meal_analysis import (
     MAX_IMAGE_BYTES, MealAnalysisError, analyze_meal_photo, validate_meal_image,
 )
@@ -47,7 +48,7 @@ _last_heartbeat = time.monotonic()
 # 看门狗必须跳过这些时段，否则会把正在同步的服务强杀（os._exit）。
 _active_syncs = 0
 
-# 回环来源免令牌（本地脚本：daily_sync.py、open_dashboard.py、计划任务）；
+# 回环来源免令牌（本地脚本：daily_sync.py、计划任务）；
 # "testclient" 是 Starlette TestClient 的对端标识，测试视同本机。
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
@@ -129,7 +130,7 @@ async def lan_token_guard(request: Request, call_next):
     """服务绑定 0.0.0.0 后，非回环来源（手机等局域网设备）必须携带有效令牌。
 
     令牌可用 ?token=… 查询参数（手机浏览器最方便）或 X-LAN-Token 头；
-    回环请求（daily_sync.py、open_dashboard.py 等本地脚本）一律免令牌。
+    回环请求（daily_sync.py 等本地脚本）一律免令牌。
     """
     client_host = request.client.host if request.client else ""
     if client_host in _LOOPBACK_HOSTS:
@@ -220,6 +221,9 @@ def _snapshot_time() -> str:
 
 def _current_health_data() -> tuple[dict, dict]:
     snapshot = load_health_snapshot()
+    active_plan = load_active_plan()
+    if active_plan is not None:
+        return snapshot, reviewed_summary(snapshot, active_plan)
     summary = build_summary(
         snapshot["activities"],
         snapshot["sleep"],
@@ -240,29 +244,20 @@ def _template_response_no_cache(request: Request, name: str, context: dict[str, 
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    snapshot, summary = _current_health_data()
-    return _template_response_no_cache(
-        request=request,
-        name="index.html",
-        context={
-            "connected": snapshot["strava_connected"],
-            "activities": snapshot["activities"][:10],
-            "summary": summary,
-            "dashboard_data": _build_dashboard_data(),
-            "snapshot_time": _snapshot_time(),
-        },
+def retired_dashboard():
+    return HTMLResponse(
+        '<meta charset="utf-8"><p>网页看板已移除，请在健康顾问对话中查看健康卡片。</p>',
+        status_code=410,
+        headers={"Cache-Control": "no-store"},
     )
 
 
 @app.get("/mobile", response_class=HTMLResponse)
-def mobile_dashboard(request: Request):
-    _, summary = _current_health_data()
+def meal_recording(request: Request):
     return _template_response_no_cache(
         request=request,
         name="mobile.html",
         context={
-            "summary": summary,
             "meal_llm_ready": bool(settings.meal_llm_api_key),
             "meal_llm_model": settings.meal_llm_model,
             "snapshot_time": _snapshot_time(),
@@ -533,102 +528,6 @@ def summary():
     return result
 
 
-def _iso_to_local_date(iso_string: str) -> str:
-    """Extract YYYY-MM-DD from an ISO timestamp in the local timezone."""
-    if not iso_string:
-        return ""
-    # Handles both '+08:00' and 'Z' suffixes; localizes to the date portion.
-    try:
-        parsed = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
-    except ValueError:
-        return iso_string[:10]
-    return parsed.astimezone().date().isoformat()
-
-
-def _build_dashboard_data() -> dict:
-    snapshot, summary = _current_health_data()
-
-    body_points = []
-    for row in sorted(snapshot.get("body") or [], key=lambda r: r.get("measured_at", "")):
-        measured_at = row.get("measured_at") or ""
-        date = _iso_to_local_date(measured_at)
-        if not date:
-            continue
-        weight = row.get("weight_kg")
-        body_fat = row.get("body_fat_pct")
-        lean = None
-        if weight is not None and body_fat is not None:
-            lean = round(weight * (1 - body_fat / 100), 2)
-        body_points.append({
-            "date": date,
-            "weight": weight,
-            "body_fat": body_fat,
-            "lean_mass": lean,
-        })
-
-    sleep_points = []
-    for row in sorted(snapshot.get("sleep") or [], key=lambda r: r.get("sleep_date") or r.get("start_time") or ""):
-        sleep_date = row.get("sleep_date") or _iso_to_local_date(row.get("start_time") or "")
-        if not sleep_date:
-            continue
-        duration = row.get("duration_minutes") or 0
-        if duration < 30:  # skip naps
-            continue
-        sleep_points.append({
-            "date": sleep_date,
-            "hours": round(duration / 60, 1),
-            "deep_hours": round((row.get("deep_minutes") or 0) / 60, 1),
-            "rem_hours": round((row.get("rem_minutes") or 0) / 60, 1),
-        })
-
-    activity_points = []
-    for row in sorted(snapshot.get("activities") or [], key=lambda r: r.get("start_date", "")):
-        start = row.get("start_date") or ""
-        date = _iso_to_local_date(start)
-        if not date:
-            continue
-        moving = row.get("moving_time") or 0
-        distance = row.get("distance") or 0
-        activity_points.append({
-            "date": date,
-            "minutes": int(moving / 60),
-            "distance_km": round(distance / 1000, 1),
-            "type": row.get("sport_type") or "活动",
-            "avg_hr": row.get("average_heartrate"),
-        })
-
-    nutrition_points = []
-    for row in sorted(snapshot.get("nutrition") or [], key=lambda r: r.get("eaten_at") or ""):
-        eaten_at = row.get("eaten_at") or ""
-        date = _iso_to_local_date(eaten_at)
-        if not date:
-            continue
-        nutrition_points.append({
-            "date": date,
-            "meal": row.get("meal_type"),
-            "kcal": row.get("total_kcal"),
-            "protein": row.get("protein_g"),
-            "carb": row.get("carb_g"),
-            "fat": row.get("fat_g"),
-        })
-
-    return {
-        "period_days": 30,
-        "body": body_points[-60:],
-        "sleep": sleep_points[-60:],
-        "activities": activity_points[-60:],
-        "nutrition": nutrition_points[-60:],
-        "summary": {
-            "latest_weight_kg": summary.get("body_composition", {}).get("latest_weight_kg"),
-            "latest_body_fat_pct": summary.get("body_composition", {}).get("latest_body_fat_pct"),
-            "latest_sleep_hours": summary.get("sleep", {}).get("latest_hours"),
-            "readiness_status": summary.get("readiness", {}).get("status"),
-            "coaching_status": summary.get("daily_coaching", {}).get("status"),
-            "coaching_headline": summary.get("daily_coaching", {}).get("headline"),
-        },
-    }
-
-
 @app.get("/api/dashboard-data")
-def dashboard_data():
-    return _build_dashboard_data()
+def retired_dashboard_data():
+    raise HTTPException(status_code=410, detail="网页看板已移除")

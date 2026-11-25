@@ -7,6 +7,7 @@ Const ASYNC_LAUNCH = 0
 Dim shell, fso, projectDir, stateDir, resDir, logDir, logFile, cmd, exitCode, logSize, suspicious, ts, json, outFile, Q, pythonExe
 Q = Chr(34)
 Set shell = CreateObject("WScript.Shell")
+shell.Environment("PROCESS")("PYTHONIOENCODING") = "utf-8"
 Set fso = CreateObject("Scripting.FileSystemObject")
 projectDir = fso.GetParentFolderName(fso.GetParentFolderName(WScript.ScriptFullName))
 stateDir = projectDir & "\logs"
@@ -34,11 +35,30 @@ suspicious = "false"
 If ASYNC_LAUNCH = 0 And exitCode = 0 And EXPECT_OUTPUT = 1 And logSize = 0 Then suspicious = "true"
 ts = Year(Now) & "-" & Right("0" & Month(Now), 2) & "-" & Right("0" & Day(Now), 2) & "T" & Right("0" & Hour(Now), 2) & ":" & Right("0" & Minute(Now), 2) & ":" & Right("0" & Second(Now), 2)
 json = "{" & Q & "task" & Q & ":" & Q & TASK_NAME & Q & "," & Q & "finished_at" & Q & ":" & Q & ts & Q & "," & Q & "exit_code" & Q & ":" & exitCode & "," & Q & "async_launch" & Q & ":" & LCase(CStr(ASYNC_LAUNCH = 1)) & "," & Q & "console_log" & Q & ":" & Q & Replace(logFile, "\", "\\") & Q & "," & Q & "console_bytes" & Q & ":" & logSize & "," & Q & "suspicious_zero_output" & Q & ":" & suspicious & "}"
-Set outFile = fso.CreateTextFile(resDir & "\" & TASK_NAME & ".json", True, False)
-outFile.Write json
-outFile.Close
+WriteUtf8 resDir & "\" & TASK_NAME & ".json", json
 If ASYNC_LAUNCH = 1 Then
     WScript.Quit 0
 Else
     WScript.Quit exitCode
 End If
+
+' FSO CreateTextFile(False) uses the system ANSI codepage, corrupting UTF-8
+' consumers when a checkout path contains non-ASCII characters.
+Sub WriteUtf8(path, text)
+    Dim utf8, binary
+    Set utf8 = CreateObject("ADODB.Stream")
+    utf8.Type = 2
+    utf8.Charset = "utf-8"
+    utf8.Open
+    utf8.WriteText text
+    utf8.Position = 0
+    utf8.Type = 1
+    utf8.Position = 3
+    Set binary = CreateObject("ADODB.Stream")
+    binary.Type = 1
+    binary.Open
+    utf8.CopyTo binary
+    binary.SaveToFile path, 2
+    binary.Close
+    utf8.Close
+End Sub

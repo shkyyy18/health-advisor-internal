@@ -60,7 +60,7 @@ def test_lan_request_with_query_token_allowed(monkeypatch):
     _as_lan_client(monkeypatch)
     client = TestClient(main.app)
     token = main.settings.lan_token
-    assert client.get("/", params={"token": token}).status_code == 200
+    assert client.get("/", params={"token": token}).status_code == 410
     assert client.post("/api/heartbeat", params={"token": token}).status_code == 200
 
 
@@ -71,9 +71,9 @@ def test_lan_request_with_header_token_allowed(monkeypatch):
     assert response.status_code == 200
 
 
-def test_static_assets_open_on_lan(monkeypatch):
+def test_retired_dashboard_assets_are_unavailable_on_lan(monkeypatch):
     _as_lan_client(monkeypatch)
-    assert TestClient(main.app).get("/static/js/dashboard.js").status_code == 200
+    assert TestClient(main.app).get("/static/js/dashboard.js").status_code == 404
 
 
 # ---------- 改动二：xiaomi 采集重试分类 ----------
